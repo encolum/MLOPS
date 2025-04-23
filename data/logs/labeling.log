@@ -1,0 +1,8 @@
+2025-04-23 02:06:16,804 - __main__ - INFO - Starting sentiment labeling for ./processed/processed_twitter_20250422_074446.csv
+2025-04-23 02:06:16,834 - __main__ - INFO - Loaded 34 rows from ./processed/processed_twitter_20250422_074446.csv
+2025-04-23 02:06:49,042 - __main__ - INFO - Progress: 10/34 rows (29.4%) - ETA: 1.3 mins
+2025-04-23 02:07:22,536 - __main__ - INFO - Progress: 20/34 rows (58.8%) - ETA: 0.8 mins
+2025-04-23 02:07:49,890 - __main__ - INFO - Progress: 30/34 rows (88.2%) - ETA: 0.2 mins
+2025-04-23 02:08:04,653 - __main__ - INFO - Labeled data saved to ./labeled/labeled_twitter_20250423_020616.csv
+2025-04-23 02:08:04,654 - __main__ - INFO - Labeling complete: 34 rows labeled out of 34 processed
+2025-04-23 02:08:04,654 - __main__ - INFO - Total time: 1.8 minutes
