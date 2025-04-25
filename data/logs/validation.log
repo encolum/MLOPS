@@ -242,3 +242,28 @@
 2025-04-23 03:10:47,729 - __main__ - INFO - Validating sentiment distribution
 2025-04-23 03:10:47,736 - __main__ - INFO - Validation complete: 6/6 checks passed
 2025-04-23 03:10:47,737 - __main__ - INFO - Validation Results: 6/6 checks passed
+2025-04-25 08:28:31,224 - great_expectations.data_context.data_context.context_factory - INFO - Could not find local file-backed GX project
+2025-04-25 08:28:31,226 - great_expectations.data_context.types.base - INFO - Created temporary directory '/tmp/tmpanicecof' for ephemeral docs site
+2025-04-25 08:28:31,227 - great_expectations.datasource.fluent.config - INFO - Loading 'datasources' ->
+[]
+2025-04-25 08:28:31,346 - __main__ - INFO - Running all validations
+2025-04-25 08:28:31,347 - __main__ - INFO - Validating column count = 16
+2025-04-25 08:28:31,365 - __main__ - INFO - Validating column Sentiment exists
+2025-04-25 08:28:31,368 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,369 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,372 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,372 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,373 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,373 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,374 - __main__ - INFO - Validating column cleaned_text exists
+2025-04-25 08:28:31,377 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,378 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,380 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,381 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,382 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,383 - great_expectations.expectations.expectation - INFO - _get_default_value called with key "table", but it is not a known field
+2025-04-25 08:28:31,383 - __main__ - INFO - Validating likeCount is of type int64
+2025-04-25 08:28:31,389 - __main__ - INFO - Validating no nulls in cleaned_text
+2025-04-25 08:28:31,400 - __main__ - INFO - Validating sentiment distribution
+2025-04-25 08:28:31,410 - __main__ - INFO - Validation complete: 6/6 checks passed
+2025-04-25 08:28:31,410 - __main__ - INFO - Validation Results: 6/6 checks passed

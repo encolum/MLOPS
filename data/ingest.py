@@ -31,50 +31,16 @@ def get_connection_string(db_name=None):
         Connection string for SQLAlchemy
     """
     db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD", "iloveyou044")  # Using your password from the notebook
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = os.getenv("DB_PORT", "5432")
+    db_password = os.getenv("DB_PASSWORD")  # Using your password from the notebook
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT")
     
     # Use provided db_name or default from environment
     if db_name is None:
-        db_name = os.getenv("DB_NAME", "Tweet")  # Using your DB name from the notebook
+        db_name = os.getenv("DB_NAME", "twitter_analysis")  # Using your DB name from the notebook
     
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
-# def ensure_database_exists(db_name):
-#     """
-#     Create PostgreSQL database if it doesn't exist.
-    
-#     Args:
-#         db_name: Name of the database to create
-#     """
-#     # Connect to default 'postgres' database to check if our target database exists
-#     conn_string = get_connection_string("postgres")
-#     engine = create_engine(conn_string)
-    
-#     with engine.connect() as connection:
-#         # Check if database exists
-#         result = connection.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
-#         exists = result.fetchone()
-        
-#         if not exists:
-#             # Need to use raw psycopg2 for database creation
-#             conn = psycopg2.connect(
-#                 user=os.getenv("DB_USER"),
-#                 password=os.getenv("DB_PASSWORD"),
-#                 host=os.getenv("DB_HOST"),
-#                 port=os.getenv("DB_PORT"),
-#                 database="postgres"
-#             )
-#             conn.autocommit = True
-            
-#             with conn.cursor() as cursor:
-#                 cursor.execute(f"CREATE DATABASE {db_name}")
-                
-#             conn.close()
-#             logger.info(f"Database '{db_name}' created successfully.")
-#         else:
-#             logger.info(f"Database '{db_name}' already exists.")
 
 def ensure_database_exists(db_name):
     """
@@ -187,20 +153,77 @@ def ingest_data(raw_csv_file, db_name, table_name="data_table", if_exists="repla
     except Exception as e:
         logger.error(f"Error during data ingestion: {str(e)}")
         raise
+    
+def get_latest_labeled_file():
+    """Find the most recent labeled file in the labeled directory."""
+    labeled_dir = "./labeled"
+    if not os.path.exists(labeled_dir):
+        logger.error("Labeled directory not found!")
+        return None
+        
+    all_files = [f for f in os.listdir(labeled_dir) if f.endswith('.csv')]
+    if not all_files:
+        logger.error("No labeled files found!")
+        return None
+        
+    latest_file = max(all_files, key=lambda f: os.path.getmtime(os.path.join(labeled_dir, f)))
+    return os.path.join(labeled_dir, latest_file)
+
+
+def test_db_connection():
+    """Test the database connection and print diagnostic information."""
+    db_user = os.getenv("DB_USER", "postgres")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT", "5432")
+    
+    print(f"Testing connection to PostgreSQL:")
+    print(f"  Host: {db_host}")
+    print(f"  Port: {db_port}")
+    print(f"  User: {db_user}")
+    print(f"  Password: {'*' * len(db_password) if db_password else 'Not set'}")
+    
+    try:
+        # Try psycopg2 direct connection
+        conn = psycopg2.connect(
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port,
+            database="postgres"  # Default database
+        )
+        print("✅ Connection successful!")
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ Connection failed: {str(e)}")
+        
+        # Suggest solutions
+        if "Connection refused" in str(e):
+            print("\nPossible solutions:")
+            print("1. Make sure PostgreSQL is running")
+            print("2. Check if the host and port are correct")
+            print("3. For WSL users, try setting DB_HOST to host.docker.internal or your Windows IP")
+            print("4. Verify PostgreSQL is configured to accept remote connections")
+        return False
 
 def main():
+    import time
     # Parse command line arguments
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     parser = argparse.ArgumentParser(
         description="Ingest raw data from a CSV file into a PostgreSQL database."
     )
+    default_input = get_latest_labeled_file() or f'./labeled/labeled_twitter_{timestamp}.csv'
     parser.add_argument(
         "--input", "-i", 
-        default='/mnt/d/MLOps2/data/labeled/labeled_twitter_20250423_020616.csv',
+        default=default_input,
         help="Path to the input CSV file (raw data)."
     )
     parser.add_argument(
         "--db_name", "-d",
-        default='Tweet',
+        default='twitter_analysis',
         help="Name of the PostgreSQL database."
     )
     parser.add_argument(
@@ -210,21 +233,42 @@ def main():
     )
     parser.add_argument(
         "--mode", "-m",
-        default="replace",
+        default="append",
         choices=["replace", "append", "fail"],
         help="How to handle existing tables: replace, append, or fail (default: replace)."
     )
+    parser.add_argument(
+        "--dry-run", 
+        action="store_true",
+        help="Only validate the CSV file without database operations."
+    )
+    
+    
     args = parser.parse_args()
 
     csv_file_path = args.input
     db_name = args.db_name
     table_name = args.table
     if_exists = args.mode
+    dry_run = args.dry_run
 
     # Check if the CSV file exists
     if not os.path.exists(csv_file_path):
         logger.error(f"CSV file {csv_file_path} does not exist.")
         sys.exit(1)
+    
+    # In dry-run mode, just load and show data summary
+    if dry_run:
+        try:
+            df = pd.read_csv(csv_file_path)
+            print(f"✅ Successfully loaded CSV file with {len(df)} records and {len(df.columns)} columns.")
+            print(f"Column names: {', '.join(df.columns)}")
+            print("\nData preview:")
+            print(df.head(3))
+            sys.exit(0)
+        except Exception as e:
+            print(f"❌ Error reading CSV file: {str(e)}")
+            sys.exit(1)
 
     # Ingest data
     try:

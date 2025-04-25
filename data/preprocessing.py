@@ -166,7 +166,11 @@ def preprocess_data(input_file, output_file=None):
     
     # Drop original text and hashtags columns
     df.drop(columns=['text', 'hashtags'], inplace=True, errors='ignore')
-    
+    if 'id' in df.columns:
+        df['id'] = df['id'].astype(int)
+    if 'user_id' in df.columns:
+        df['user_id'] = df['user_id'].astype(int)
+
     # Process date and time
     if 'date' in df.columns:
         # Convert to datetime
