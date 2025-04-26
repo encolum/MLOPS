@@ -1,282 +1,285 @@
 """
-Data ingestion module to load CSV data into PostgreSQL database.
+Simplified data ingestion module for loading CSV files into PostgreSQL
 """
 import pandas as pd
 import psycopg2
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 import os
 import sys
-import argparse
 import logging
 from dotenv import load_dotenv
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
-def get_connection_string(db_name=None):
-    """
-    Create PostgreSQL connection string from environment variables.
-    
-    Args:
-        db_name: Optional database name to override environment variable
-        
-    Returns:
-        Connection string for SQLAlchemy
-    """
+def connect_to_db(db_name="postgres"):
+    """Create database connection using environment variables"""
     db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD")  # Using your password from the notebook
-    db_host = os.getenv("DB_HOST")
-    db_port = os.getenv("DB_PORT")
-    
-    # Use provided db_name or default from environment
-    if db_name is None:
-        db_name = os.getenv("DB_NAME", "twitter_analysis")  # Using your DB name from the notebook
-    
-    return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
-
-def ensure_database_exists(db_name):
-    """
-    Create PostgreSQL database if it doesn't exist.
-    
-    Args:
-        db_name: Name of the database to create
-    """
-    # Get connection details from environment or defaults
-    db_user = os.getenv("DB_USER")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST") # <-- Get the host here
-    db_port = os.getenv("DB_PORT")
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "5432")
     
-    # Connect to default 'postgres' database to check if our target database exists
-    # Use the actual host for the initial connection string as well
-    conn_string_postgres = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/postgres"
-    
+    conn_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    return create_engine(conn_string)
+
+def create_database_if_not_exists(db_name):
+    """Create the database if it doesn't exist"""
     try:
-        # Use SQLAlchemy to check existence (this should use TCP/IP via the URL)
-        engine = create_engine(conn_string_postgres)
+        # Connect to default postgres database
+        engine = connect_to_db("postgres")
         
-        with engine.connect() as connection:
-            # Check if database exists
-            # Note: SQLAlchemy's text() is safer for raw SQL
-            from sqlalchemy import text
-            result = connection.execute(text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"))
+        # Check if database exists
+        with engine.connect() as conn:
+            result = conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'"))
             exists = result.fetchone()
             
             if not exists:
-                logger.info(f"Database '{db_name}' does not exist. Creating...")
-                # Need to use raw psycopg2 for database creation
-                # IMPORTANT: Use the actual db_host obtained from env/default
-                conn = psycopg2.connect(
-                    user=db_user,
-                    password=db_password,
-                    host=db_host, # <-- Use the variable here!
-                    port=db_port,
-                    database="postgres"
-                )
-                conn.autocommit = True
-                
-                with conn.cursor() as cursor:
-                    # Safer to check again within the transaction block or ensure exclusiveness
-                    # For simplicity in this example, we assume the check above is sufficient
-                    try:
-                        cursor.execute(f"CREATE DATABASE {db_name}")
-                        logger.info(f"Database '{db_name}' created successfully.")
-                    except psycopg2.errors.DuplicateDatabase:
-                        # Handle race condition if another process created it between checks
-                        logger.info(f"Database '{db_name}' already exists (created by another process?).")
-                    
-                conn.close()
+                logger.info(f"Creating database '{db_name}'...")
+                conn.execute(text(f"CREATE DATABASE {db_name}"))
+                logger.info(f"Database '{db_name}' created.")
             else:
                 logger.info(f"Database '{db_name}' already exists.")
-
-    except psycopg2.OperationalError as e:
-        # Catch the specific connection error here for better messaging
-        logger.error(f"Failed to connect to PostgreSQL at {db_host}:{db_port} to check/create database: {e}")
-        logger.error("Please ensure the database server is running and accessible from WSL.")
-        logger.error(f"If the server is on Windows, check Firewall rules for port {db_port} and listen_addresses='*' in postgresql.conf.")
-        # Re-raise the error so the calling function (ingest_data) knows it failed
-        raise
+                
     except Exception as e:
-        logger.error(f"An unexpected error occurred while checking/creating database '{db_name}': {e}")
+        logger.error(f"Database connection error: {e}")
         raise
 
-def ingest_data(raw_csv_file, db_name, table_name="data_table", if_exists="replace"):
+def load_data_to_db(csv_file, db_name, table_name, if_exists="replace"):
     """
-    Ingest data from a CSV file into a PostgreSQL database.
-
+    Load data from CSV file to PostgreSQL database
+    
     Args:
-        raw_csv_file (str): Path to the CSV file as Raw data.
-        db_name (str): Name of the PostgreSQL database.
-        table_name (str): Name of the table to create/update.
-        if_exists (str): What to do if table exists ('replace', 'append', 'fail').
+        csv_file: Path to the CSV file
+        db_name: Database name
+        table_name: Table name
+        if_exists: How to handle existing table ('replace', 'append', 'fail')
+    
+    Returns:
+        Number of records loaded
     """
     try:
         # Ensure database exists
-        ensure_database_exists(db_name)
+        create_database_if_not_exists(db_name)
         
-        # Load data from CSV
-        logger.info(f"Loading data from {raw_csv_file}...")
-        df = pd.read_csv(raw_csv_file)
-        logger.info(f"Loaded {len(df)} records with {len(df.columns)} columns.")
+        # Load CSV data
+        logger.info(f"Loading data from {csv_file}")
+        df = pd.read_csv(csv_file)
         
-        # Handle potential data cleaning/transformation
-        # Convert date columns to datetime if they exist
-        date_columns = [col for col in df.columns if 'date' in col.lower()]
-        for col in date_columns:
-            try:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
-                logger.info(f"Converted '{col}' to datetime format.")
-            except:
-                logger.warning(f"Could not convert '{col}' to datetime.")
+        # Convert any date columns to datetime
+        for col in df.columns:
+            if 'date' in col.lower():
+                try:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                except:
+                    pass
         
-        # Connect to PostgreSQL database
-        conn_string = get_connection_string(db_name)
-        logger.info(f"Connecting to database '{db_name}'...")
-        engine = create_engine(conn_string)
-        
-        # Write the DataFrame to PostgreSQL
-        logger.info(f"Writing data to table '{table_name}' ({if_exists} mode)...")
+        # Connect to target database and insert data
+        engine = connect_to_db(db_name)
         df.to_sql(table_name, engine, if_exists=if_exists, index=False)
         
-        records_count = len(df)
-        logger.info(f"Successfully ingested {records_count} records into {db_name}.{table_name}")
-        return records_count
+        logger.info(f"Loaded {len(df)} records into {db_name}.{table_name}")
+        return len(df)
         
     except Exception as e:
-        logger.error(f"Error during data ingestion: {str(e)}")
+        logger.error(f"Error loading data: {e}")
         raise
-    
+
 def get_latest_labeled_file():
-    """Find the most recent labeled file in the labeled directory."""
-    labeled_dir = "./labeled"
-    if not os.path.exists(labeled_dir):
-        logger.error("Labeled directory not found!")
-        return None
-        
-    all_files = [f for f in os.listdir(labeled_dir) if f.endswith('.csv')]
-    if not all_files:
-        logger.error("No labeled files found!")
-        return None
-        
-    latest_file = max(all_files, key=lambda f: os.path.getmtime(os.path.join(labeled_dir, f)))
-    return os.path.join(labeled_dir, latest_file)
+        """Get the latest labeled file from the labeled directory"""
+        labeled_dir = './labeled'
+        files = [f for f in os.listdir(labeled_dir) if f.endswith('.csv')]
+        if not files:
+            return None
+        latest_file = max(files, key=lambda x: os.path.getctime(os.path.join(labeled_dir, x)))
+        return os.path.join(labeled_dir, latest_file)
 
-
-def test_db_connection():
-    """Test the database connection and print diagnostic information."""
+def test_connection():
+    """Test the database connection properly using psycopg2"""
     db_user = os.getenv("DB_USER", "postgres")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST")
+    db_host = os.getenv("DB_HOST", "host.docker.internal")
     db_port = os.getenv("DB_PORT", "5432")
     
-    print(f"Testing connection to PostgreSQL:")
-    print(f"  Host: {db_host}")
-    print(f"  Port: {db_port}")
-    print(f"  User: {db_user}")
-    print(f"  Password: {'*' * len(db_password) if db_password else 'Not set'}")
-    
     try:
-        # Try psycopg2 direct connection
+        # Thử kết nối trực tiếp bằng psycopg2
         conn = psycopg2.connect(
             user=db_user,
             password=db_password,
             host=db_host,
             port=db_port,
-            database="postgres"  # Default database
+            database="postgres",  # Kết nối đến postgres mặc định
+            connect_timeout=3     # Timeout sau 3 giây
         )
-        print("✅ Connection successful!")
         conn.close()
+        print(f"✅ Successfully connected to PostgreSQL at {db_host}:{db_port}")
         return True
     except Exception as e:
-        print(f"❌ Connection failed: {str(e)}")
-        
-        # Suggest solutions
-        if "Connection refused" in str(e):
-            print("\nPossible solutions:")
-            print("1. Make sure PostgreSQL is running")
-            print("2. Check if the host and port are correct")
-            print("3. For WSL users, try setting DB_HOST to host.docker.internal or your Windows IP")
-            print("4. Verify PostgreSQL is configured to accept remote connections")
+        print(f"❌ Failed to connect to PostgreSQL at {db_host}:{db_port}")
+        print(f"Error message: {str(e)}")
+        print("\nGợi ý khắc phục:")
+        print("1. Nếu PostgreSQL đang chạy trên Windows và bạn đang sử dụng WSL:")
+        print("   - Tạo file .env với nội dung sau:")
+        print('     DB_HOST=host.docker.internal  # hoặc IP của Windows')
+        print('     DB_USER=postgres')
+        print('     DB_PASSWORD=your_password')
+        print('     DB_PORT=5432')
+        print("   - Đảm bảo PostgreSQL được cấu hình nhận kết nối từ xa:")
+        print("     + Sửa file pg_hba.conf để thêm: host all all 0.0.0.0/0 md5")
+        print("     + Sửa file postgresql.conf: listen_addresses = '*'")
+        print("2. Sử dụng công cụ ingest_sqlite.py thay thế (đơn giản hơn):")
+        print("   python ingest_sqlite.py --file your_file.csv")
         return False
 
+# Chạy test_connection() ở đầu hàm main() để kiểm tra
 def main():
-    import time
-    # Parse command line arguments
+    """Main function to load data from CSV to PostgreSQL"""
+    import argparse
     from datetime import datetime
+    
+    # Test connection first - if it fails, suggest alternatives
+    if not test_connection():
+        print("❌ Không thể kết nối đến PostgreSQL. Đang dừng chương trình.")
+        sys.exit(1)
+    
+    # Get default input file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parser = argparse.ArgumentParser(
-        description="Ingest raw data from a CSV file into a PostgreSQL database."
-    )
-    default_input = get_latest_labeled_file() or f'./labeled/labeled_twitter_{timestamp}.csv'
+    try:
+        default_input = get_latest_labeled_file() or f'./labeled/labeled_twitter_{timestamp}.csv'
+    except Exception as e:
+        default_input = f'./labeled/labeled_twitter_{timestamp}.csv'
+        print(f"⚠️ Không thể tìm thấy file CSV mặc định: {e}")
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Load CSV data into PostgreSQL")
     parser.add_argument(
-        "--input", "-i", 
+        "--file", "-f", 
         default=default_input,
         help="Path to the input CSV file (raw data)."
     )
     parser.add_argument(
-        "--db_name", "-d",
-        default='twitter_analysis',
-        help="Name of the PostgreSQL database."
+        "--database", "-d", 
+        default="twitter_analysis", 
+        help="Database name"
     )
     parser.add_argument(
-        "--table", "-t",
-        default="tweets",
-        help="Name of the table in the PostgreSQL database (default: tweets)."
+        "--table", "-t", 
+        default="tweets", 
+        help="Table name"
     )
     parser.add_argument(
-        "--mode", "-m",
-        default="append",
+        "--mode", "-m", 
+        default="append", 
         choices=["replace", "append", "fail"],
-        help="How to handle existing tables: replace, append, or fail (default: replace)."
+        help="How to handle existing tables"
     )
-    parser.add_argument(
-        "--dry-run", 
-        action="store_true",
-        help="Only validate the CSV file without database operations."
-    )
-    
     
     args = parser.parse_args()
-
-    csv_file_path = args.input
-    db_name = args.db_name
-    table_name = args.table
-    if_exists = args.mode
-    dry_run = args.dry_run
-
-    # Check if the CSV file exists
-    if not os.path.exists(csv_file_path):
-        logger.error(f"CSV file {csv_file_path} does not exist.")
+    
+    # Check if file exists
+    if not os.path.exists(args.file):
+        logger.error(f"File not found: {args.file}")
         sys.exit(1)
     
-    # In dry-run mode, just load and show data summary
-    if dry_run:
-        try:
-            df = pd.read_csv(csv_file_path)
-            print(f"✅ Successfully loaded CSV file with {len(df)} records and {len(df.columns)} columns.")
-            print(f"Column names: {', '.join(df.columns)}")
-            print("\nData preview:")
-            print(df.head(3))
-            sys.exit(0)
-        except Exception as e:
-            print(f"❌ Error reading CSV file: {str(e)}")
-            sys.exit(1)
-
-    # Ingest data
+    # Use the same connection parameters that worked in test_connection()
+    db_user = os.getenv("DB_USER", "postgres")
+    db_password = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST", "host.docker.internal")
+    db_port = os.getenv("DB_PORT", "5432")
+    
+    # Load a small piece of data first to test the connection thoroughly
     try:
-        records_count = ingest_data(csv_file_path, db_name, table_name, if_exists)
-        print(f"✅ Successfully ingested {records_count} records into {db_name}.{table_name}")
+        df = pd.read_csv(args.file)
+        print(f"Đã đọc {len(df)} dòng từ file CSV.")
+        
+        # Kiểm tra xem dữ liệu có được đọc đúng không
+        if len(df) == 0:
+            print("⚠️ File CSV không có dữ liệu!")
+            sys.exit(1)
+            
+        # Tạo kết nối trực tiếp để kiểm tra một cách toàn diện
+        # Sử dụng psycopg2 thay vì SQLAlchemy
+        print(f"Đang kết nối trực tiếp đến PostgreSQL để kiểm tra thêm...")
+        conn = psycopg2.connect(
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port,
+            database="postgres"
+        )
+        
+        # Thử tạo database nếu chưa tồn tại
+        conn.autocommit = True
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"CREATE DATABASE {args.database}")
+            print(f"✅ Đã tạo database '{args.database}'")
+        except psycopg2.errors.DuplicateDatabase:
+            print(f"✅ Database '{args.database}' đã tồn tại")
+        
+        conn.close()
+        
+        # Tiếp tục với kết nối đến database đích
+        conn_target = psycopg2.connect(
+            user=db_user,
+            password=db_password, 
+            host=db_host,
+            port=db_port,
+            database=args.database
+        )
+        
+        # Thử tạo bảng nếu cần thiết
+        conn_target.autocommit = True
+        cursor = conn_target.cursor()
+        if args.mode == "replace":
+            try:
+                cursor.execute(f"DROP TABLE IF EXISTS {args.table}")
+                print(f"✅ Đã xóa bảng '{args.table}' cũ")
+            except Exception as e:
+                print(f"⚠️ Không thể xóa bảng cũ: {e}")
+        
+        # Đóng kết nối psycopg2
+        conn_target.close()
+        
+        # Tiếp tục với SQLAlchemy để load dữ liệu
+        print(f"Đang load dữ liệu vào bảng {args.table}...")
+        
+        # Tạo kết nối SQLAlchemy trực tiếp với thông số đã hoạt động
+        conn_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{args.database}"
+        engine = create_engine(conn_string)
+        print('Đang kết nối đến PostgreSQL...")')
+        # Lưu dữ liệu
+        df.to_sql(args.table, engine, if_exists=args.mode, index=False)
+        print(f"✅ Đã load thành công {len(df)} dòng vào {args.database}.{args.table}")
+        
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        sys.exit(1)
+        print(f"❌ Lỗi: {str(e)}")
+        print("Đang chuyển sang giải pháp sử dụng SQLite...")
+        
+        # # Phương án dự phòng: Lưu vào SQLite
+        # try:
+        #     # Tạo kết nối SQLite
+        #     sqlite_file = f"{args.database}.db"
+        #     print(f"Đang lưu dữ liệu vào SQLite: {sqlite_file}")
+            
+        #     # Đọc dữ liệu nếu chưa đọc
+        #     if 'df' not in locals():
+        #         df = pd.read_csv(args.file)
+            
+        #     # Lưu vào SQLite
+        #     import sqlite3
+        #     conn = sqlite3.connect(sqlite_file)
+        #     df.to_sql(args.table, conn, if_exists=args.mode, index=False)
+        #     conn.close()
+            
+        #     print(f"✅ Đã lưu thành công {len(df)} dòng vào SQLite: {sqlite_file}")
+        #     print(f"   Bạn có thể truy vấn dữ liệu bằng lệnh: sqlite3 {sqlite_file}")
+        # except Exception as sqlite_error:
+        #     print(f"❌ Lỗi khi lưu vào SQLite: {str(sqlite_error)}")
+        #     sys.exit(1)
 
 if __name__ == "__main__":
     main()
