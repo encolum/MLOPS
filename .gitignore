@@ -5,3 +5,6 @@ airflow/logs/
 *.log
 mlruns/
 .env
+model_pipeline/bert_saved/
+model_pipeline/distilbert_saved/
+model_pipeline/roberta_saved/
