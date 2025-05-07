@@ -18,9 +18,9 @@ load_dotenv()
 
 def connect_to_db(db_name="postgres"):
     """Create database connection using environment variables"""
-    db_user = os.getenv("DB_USER", "postgres")
+    db_user = os.getenv("DB_USER", "mlops_user")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST", "localhost")
+    db_host = os.getenv("DB_HOST", "172.21.80.1")
     db_port = os.getenv("DB_PORT", "5432")
     
     conn_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"

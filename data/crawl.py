@@ -7,7 +7,13 @@ import random
 from dotenv import load_dotenv
 from twikit import Client
 import re
-load_dotenv(".env")
+import sys
+
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=env_path)
+
+# ⚠️ Nếu muốn debug giá trị .env đang load:
+print("DEBUG ENV:", {k: os.getenv(k) for k in os.environ if "TWITTER_" in k})
 
 SEARCH_KEYWORDS = [
     'TrumpIsMyPresident LoveTrump  until 2025-04-20 since  2024-12-06',
@@ -248,7 +254,8 @@ async def crawl():
             print(f"!!! [Tài khoản {creds['id']}] Không thể hoàn tất đăng nhập.")
     if not active_clients:
         print("!!! Không có tài khoản nào đăng nhập thành công. Dừng chương trình.")
-        return
+        sys.exit(1)
+        
     print(f"\n>>> Đã đăng nhập thành công với {len(active_clients)} tài khoản.")
     await main_keyword_scrape(accounts_credentials, active_clients)
 if __name__ == "__main__":

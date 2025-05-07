@@ -196,7 +196,7 @@ if __name__ == "__main__":
     os.makedirs("./processed", exist_ok=True)
     
     # Default input is the latest file in raw directory
-    input_dir = "./raw"
+    input_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raw")
     all_files = [f for f in os.listdir(input_dir) if f.endswith('.csv')]
     if not all_files:
         print("No input files found!")
@@ -206,7 +206,7 @@ if __name__ == "__main__":
         
         # Generate output filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"./processed/processed_twitter_{timestamp}.csv"
+        output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "processed", f"processed_twitter_{timestamp}.csv")
         
         # Run preprocessing
         df = preprocess_data(input_file, output_file)
