@@ -24,7 +24,7 @@ def choose_labeling_method(**context):
         return 'predict_data'
 
 with DAG(
-    dag_id='twitter_sentiment_pipeline',
+    dag_id='data_pipeline',
     default_args=default_args,
     description='End-to-end Twitter sentiment pipeline with MLflow champion model support',
     start_date=datetime.now(),

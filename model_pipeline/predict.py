@@ -40,7 +40,7 @@ def get_champion_model_uri(prefix="sentiment_"):
                 return f"models:/{rm.name}/Production"
     raise RuntimeError("Không tìm thấy model nào ở stage Production.")
 
-def find_latest_processed_file(processed_dir="/mnt/d/python/MLOps/clone/MLOPS/data/processed"):
+def find_latest_processed_file(processed_dir="/mnt/d/MLOps2/data/processed"):
     """
     Lấy file .csv mới nhất trong thư mục processed/
     """
@@ -60,7 +60,7 @@ def main():
     model = mlflow.pyfunc.load_model(model_uri)
 
     # 3. Đọc file processed mới nhất
-    input_file = find_latest_processed_file("/mnt/d/python/MLOps/clone/MLOPS/data/processed")
+    input_file = find_latest_processed_file("/mnt/d/MLOps2/data/processed")
     print(f"Reading processed data from '{input_file}'")
     df = pd.read_csv(input_file)
 
@@ -70,10 +70,10 @@ def main():
     # 5. Chạy inference
     print("Running inference...")
     preds = model.predict(model_input)
-    df['Sentiment'] = preds
+    df['sentiment'] = preds
 
     # 6. Ghi kết quả ra thư mục labeled/
-    out_dir = "/mnt/d/python/MLOps/clone/MLOPS/data/labeled"
+    out_dir = "/mnt/d/MLOps2/data/labeled"
     os.makedirs(out_dir, exist_ok=True)
     date_str = datetime.now().strftime("%Y%m%d")
     out_file = os.path.join(out_dir, f"predicted_twitter_{date_str}.csv")

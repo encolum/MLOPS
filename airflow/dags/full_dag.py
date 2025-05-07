@@ -85,7 +85,7 @@ def wait_for_mlflow(timeout=90):
 
 # Define the DAG
 with DAG(
-    dag_id='twitter_sentiment_analysis_pipeline_2',
+    dag_id='twitter_sentiment_analysis_pipeline',
     default_args=default_args,
     description='End-to-end Twitter sentiment pipeline with MLflow champion model support',
     start_date= datetime(2025, 5, 7),
@@ -94,38 +94,38 @@ with DAG(
     tags=['mlops', 'sentiment', 'twitter'], # Added tags for better organization
 ) as dag:
 
-    start_mlflow_server = BashOperator(
-    task_id='start_mlflow_server',
-    bash_command="""
-    if ! lsof -i :5000 > /dev/null; then
-        nohup mlflow server \
-            --backend-store-uri sqlite:///mlflow.db \
-            --default-artifact-root ./mlruns \
-            --host 0.0.0.0 \
-            --port 5000 \
-            > mlflow_server.log 2>&1 &
-        echo "MLflow server started."
-    else
-        echo "MLflow server already running on port 5000."
-    fi
-    """,
-    )
+    # start_mlflow_server = BashOperator(
+    # task_id='start_mlflow_server',
+    # bash_command="""
+    # if ! lsof -i :5000 > /dev/null; then
+    #     nohup mlflow server \
+    #         --backend-store-uri sqlite:///mlflow.db \
+    #         --default-artifact-root ./mlruns \
+    #         --host 0.0.0.0 \
+    #         --port 5000 \
+    #         > mlflow_server.log 2>&1 &
+    #     echo "MLflow server started."
+    # else
+    #     echo "MLflow server already running on port 5000."
+    # fi
+    # """,
+    # )
 
-    wait_mlflow_ready = PythonOperator(
-        task_id='wait_for_mlflow',
-        python_callable=wait_for_mlflow
-    )
+    # wait_mlflow_ready = PythonOperator(
+    #     task_id='wait_for_mlflow',
+    #     python_callable=wait_for_mlflow
+    # )
 
     # Step 1: Crawl raw Twitter data
     crawl_data = BashOperator(
         task_id='crawl_data',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/data/crawl.py'
+        bash_command='python /mnt/d/MLOps2/data/crawl.py'
     )
 
     # Step 2: Preprocess tweets
     preprocess_data = BashOperator(
         task_id='preprocess_data',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/data/preprocessing.py'
+        bash_command='python /mnt/d/MLOps2/data/preprocessing.py'
     )
 
     # Step 3: Check if it's training day or not
@@ -137,33 +137,33 @@ with DAG(
     # Step 4: Train the model (only runs on training days)
     train_model = BashOperator(
         task_id='train_model',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/model_pipeline/model_training.py',
+        bash_command='python /mnt/d/MLOps2/model_pipeline/model_training.py',
     )
 
     model_deploy = BashOperator(
         task_id='model_deploy',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/model_pipeline/model_deploy.py',
+        bash_command='python /mnt/d/MLOps2/model_pipeline/model_deploy.py',
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
     # Step 6: Validate the new model (only on training days)
     model_validate = BashOperator(
         task_id='model_validate',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/model_pipeline/model_validate.py',
+        bash_command='python /mnt/d/MLOps2/model_pipeline/model_validate.py',
         trigger_rule=TriggerRule.ALL_DONE, 
     )
 
     # Step 7: Serve the new model (only on training days)
     model_serve = BashOperator(
         task_id='model_serve',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/model_pipeline/model_serve.py',
+        bash_command='python /mnt/d/MLOps2/model_pipeline/model_serve.py',
         trigger_rule=TriggerRule.ALL_DONE,
     )
 
     # Step 8: Predict using the current model (for both training and non-training days)
     predict_data = BashOperator(
         task_id='predict_data',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/model_pipeline/predict.py',
+        bash_command='python /mnt/d/MLOps2/model_pipeline/predict.py',
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -171,7 +171,7 @@ with DAG(
     # Step 9: Validate the data (after prediction)
     validate_data = BashOperator(
         task_id='validate_data',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/data/validate.py',
+        bash_command='python /mnt/d/MLOps2/data/validate.py',
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -179,7 +179,7 @@ with DAG(
     # Step 10: Ingest data into PostgreSQL
     ingest_data = BashOperator(
         task_id='ingest_data',
-        bash_command='/home/tpa/venvs/mlops310/bin/python /mnt/d/python/MLOps/clone/MLOPS/data/ingest.py',
+        bash_command='python /mnt/d/MLOps2/data/ingest.py',
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -190,7 +190,7 @@ with DAG(
     )
 
     # Define dependencies
-    start_mlflow_server >> wait_mlflow_ready >> crawl_data >> preprocess_data >> check_training
+    crawl_data >> preprocess_data >> check_training
     
     # If it's training day, train, deploy, validate, and serve the model
     check_training >> [train_model, skip_training]

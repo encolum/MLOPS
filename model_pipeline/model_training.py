@@ -33,12 +33,12 @@ from sqlalchemy.engine import Engine
 
 class DataProcessor:
     def __init__(self, sql_query=None):
-        self.db_user = os.getenv('DB_USER', 'mlops_user')
-        self.db_pass = os.getenv('DB_PASSWORD', '12345678')
-        self.db_host = os.getenv('DB_HOST', '172.21.80.1')
+        self.db_user = os.getenv('DB_USER', 'postgres')
+        self.db_pass = os.getenv('DB_PASSWORD', '123456789')
+        self.db_host = os.getenv('DB_HOST', '172.26.16.1')
         self.db_port = os.getenv('DB_PORT', '5432')
-        self.db_name = os.getenv('DB_NAME', 'mlops')
-        self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM comments_labeled')
+        self.db_name = os.getenv('DB_NAME', 'twitter_analysis')
+        self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM tweets')
         self.df = None
 
 
@@ -52,10 +52,29 @@ class DataProcessor:
         return self.df
 
     def clean_and_map(self, text_col='cleaned_text', label_col='sentiment'):
+        # 1) Chuẩn hóa text
         self.df[text_col] = self.df[text_col].str.replace(r'[^a-zA-Z0-9\s]', '', regex=True)
-        sentiment_map = {'Positive': 1, 'Negative': 0, 'Neutral': 2}
-        self.df['sentiment_num'] = self.df[label_col].map(sentiment_map)
+
+        # 2) Chuẩn hóa và map label
+        #   a) strip & capitalize để đồng nhất chuỗi
+        self.df[label_col] = self.df[label_col].str.strip().str.capitalize()
+
+        mapping = {'Positive': 1, 'Negative': 0, 'Neutral': 2}
+        self.df['sentiment_num'] = self.df[label_col].map(mapping)
+
+        # 3) Kiểm tra kết quả
+        print("Label counts (including NaN):")
+        print(self.df['sentiment_num'].value_counts(dropna=False))
+
+        # 4) Loại bỏ những hàng không map được
+        before = len(self.df)
+        self.df = self.df.dropna(subset=['sentiment_num'])
+        after = len(self.df)
+        print(f"Dropped {before-after} rows without valid sentiment")
+
+        self.df['sentiment_num'] = self.df['sentiment_num'].astype(int)
         return self.df
+
 
     def split(self, test_size=0.2, random_state=42, text_col='cleaned_text', label_col='sentiment_num'):
         X = self.df[text_col]

@@ -17,7 +17,6 @@ model_pipeline/*_saved/
 *.log
 
 # Env, configs
-.env
 *.yaml
 lib/
 *.conda

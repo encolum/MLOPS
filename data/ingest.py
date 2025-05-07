@@ -90,7 +90,7 @@ def load_data_to_db(csv_file, db_name, table_name, if_exists="replace"):
 
 def get_latest_labeled_file():
         """Get the latest labeled file from the labeled directory"""
-        labeled_dir = './labeled'
+        labeled_dir = '/mnt/d/MLOps2/data/labeled'
         files = [f for f in os.listdir(labeled_dir) if f.endswith('.csv')]
         if not files:
             return None
@@ -148,9 +148,9 @@ def main():
     # Get default input file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     try:
-        default_input = get_latest_labeled_file() or f'./labeled/labeled_twitter_{timestamp}.csv'
+        default_input = get_latest_labeled_file() or f'/mnt/d/MLOps2/data/labeled/labeled_twitter_{timestamp}.csv'
     except Exception as e:
-        default_input = f'./labeled/labeled_twitter_{timestamp}.csv'
+        default_input = f'/mnt/d/MLOps2/data/labeled/labeled_twitter_{timestamp}.csv'
         print(f"⚠️ Không thể tìm thấy file CSV mặc định: {e}")
     
     # Parse command line arguments
