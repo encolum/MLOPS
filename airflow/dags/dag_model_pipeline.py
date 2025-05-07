@@ -54,14 +54,14 @@ def should_train_model(execution_date, dag, session=None):
     return True
 
 dag = DAG(
-    dag_id='metvcl',
+    dag_id='model_pipeline',
     default_args=default_args,
     schedule_interval='0 8 * * *',
     catchup=False,
     description='Run model training every 15 days, but validate/deploy/predict daily',
 )
 
-PYTHON = '/home/tpa/venvs/mlops310/bin/python'
+# PYTHON = '/home/tpa/venvs/mlops310/bin/python'
 
 # --- Tasks ---
 check_training = PythonOperator(
@@ -73,34 +73,34 @@ check_training = PythonOperator(
 
 model_training = BashOperator(
     task_id='model_training',
-    bash_command=f'{PYTHON} /mnt/d/python/MLOps/clone/MLOPS/model_pipeline_tpa/model_training.py',
+    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_training.py',
     dag=dag,
 )
 
 model_deploy = BashOperator(
     task_id='model_deploy',
-    bash_command=f'{PYTHON} /mnt/d/python/MLOps/clone/MLOPS/model_pipeline_tpa/model_deploy.py',
+    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_deploy.py',
     trigger_rule=TriggerRule.ALL_DONE,
     dag=dag,
 )
 
 model_validate = BashOperator(
     task_id='model_validate',
-    bash_command=f'{PYTHON} /mnt/d/python/MLOps/clone/MLOPS/model_pipeline_tpa/model_validate.py',
+    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_validate.py',
     trigger_rule=TriggerRule.ALL_DONE,
     dag=dag,
 )
 
 model_serve = BashOperator(
     task_id='model_serve',
-    bash_command=f'{PYTHON} /mnt/d/python/MLOps/clone/MLOPS/model_pipeline_tpa/model_serve.py',
+    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_serve.py',
     trigger_rule=TriggerRule.ALL_DONE,
     dag=dag,
 )
 
 send_request = BashOperator(
     task_id='send_request',
-    bash_command=f'{PYTHON} /mnt/d/python/MLOps/clone/MLOPS/model_pipeline_tpa/send_request.py',
+    bash_command=f'python /mnt/d/MLOps2/model_pipeline/send_request.py',
     trigger_rule=TriggerRule.ALL_DONE,
     dag=dag,
 )

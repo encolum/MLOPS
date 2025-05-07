@@ -179,7 +179,8 @@ def preprocess_data(input_file, output_file=None):
         # Add year and month-year columns
         df['year'] = df['date'].dt.year
         df['month_year'] = df['date'].dt.to_period('M').astype(str)
-        
+        #lowercase columns
+        df.columns = df.columns.str.lower()
         # Sort by date
         df = df.sort_values(by='date').reset_index(drop=True)
     
