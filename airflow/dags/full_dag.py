@@ -154,11 +154,16 @@ with DAG(
     )
 
     # Step 7: Serve the new model (only on training days)
+    # model_serve = BashOperator(
+    #     task_id='model_serve',
+    #     bash_command='python /mnt/d/MLOps2/model_pipeline/model_serve.py',
+    #     trigger_rule=TriggerRule.ALL_DONE,
+    # )
     model_serve = BashOperator(
-        task_id='model_serve',
-        bash_command='python /mnt/d/MLOps2/model_pipeline/model_serve.py',
-        trigger_rule=TriggerRule.ALL_DONE,
-    )
+    task_id='model_serve',
+    bash_command='docker compose -f /mnt/d/MLOps2/dockerfiles/docker-compose.yml up -d',
+    trigger_rule=TriggerRule.ALL_SUCCESS,
+)
 
     # Step 8: Predict using the current model (for both training and non-training days)
     predict_data = BashOperator(

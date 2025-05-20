@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+mlflow
+pandas
+scikit-learn
+requests
+numpy
+torch
+transformers
+nltk
