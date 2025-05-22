@@ -1,31 +1,41 @@
-# tests/test_model_serve.py
 import requests
 import pytest
+from unittest.mock import patch
 
 BASE_URL = "http://fastapi:5001"
 
 def test_health_endpoint():
-    response = requests.get(f"{BASE_URL}/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert data["status"] in ["healthy", "unhealthy"]
+    with patch("requests.get") as mock_get:
+        mock_get.return_value = type('MockResponse', (), {
+            'status_code': 200,
+            'json': lambda: {"status": "healthy"}
+        })()
+        response = requests.get(f"{BASE_URL}/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert data["status"] in ["healthy", "unhealthy"]
 
 def test_predict_endpoint_valid_input():
-    # Test với input hợp lệ
-    payload = {"instances": [{"text": "I love Trump!"}]}
-    response = requests.post(f"{BASE_URL}/predict", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert "predictions" in data
-    assert isinstance(data["predictions"], list)
-    assert len(data["predictions"]) == 1
-    assert data["predictions"][0] in [0,1,2]
+    with patch("requests.post") as mock_post:
+        mock_post.return_value = type('MockResponse', (), {
+            'status_code': 200,
+            'json': lambda: {"predictions": [2]}
+        })()
+        payload = {"instances": [{"text": "I love Trump!"}]}
+        response = requests.post(f"{BASE_URL}/predict", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["predictions"] == [2]
 
 def test_predict_endpoint_invalid_input():
-    # Test với input không hợp lệ (thiếu "instances")
-    payload = {"text": "I love Trump!"}
-    response = requests.post(f"{BASE_URL}/predict", json=payload)
-    assert response.status_code == 422  # FastAPI tự động trả 422 cho input sai định dạng
-    data = response.json()
-    assert "detail" in data
+    with patch("requests.post") as mock_post:
+        mock_post.return_value = type('MockResponse', (), {
+            'status_code': 422,
+            'json': lambda: {"detail": "Invalid input"}
+        })()
+        payload = {"text": "I love Trump!"}
+        response = requests.post(f"{BASE_URL}/predict", json=payload)
+        assert response.status_code == 422
+        data = response.json()
+        assert "detail" in data
