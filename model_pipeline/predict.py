@@ -7,6 +7,7 @@ from mlflow.tracking import MlflowClient
 from datetime import datetime
 import mlflow
 import requests
+import json
 
 MLFLOW_TRACKING_URI = "http://localhost:5000"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -26,19 +27,14 @@ def wait_for_mlflow(timeout=30):
         time.sleep(3)
     raise RuntimeError("MLflow server not ready after waiting.")
 
-def get_champion_model_uri(prefix="sentiment_"):
-    """
-    Tìm model đang ở stage 'Production' trên MLflow Registry
-    """
-    client = MlflowClient()
-    for rm in client.search_registered_models():
-        if not rm.name.startswith(prefix):
-            continue
-        for mv in client.search_model_versions(f"name='{rm.name}'"):
-            if mv.current_stage == "Production":
-                print(f"Found production model: {rm.name}, version: {mv.version}")
-                return f"models:/{rm.name}/Production"
-    raise RuntimeError("Không tìm thấy model nào ở stage Production.")
+def get_current_champion_uri(info_path="/mnt/d/python/MLOps/clone/MLOPS/current_champion.json"):
+    with open(info_path, "r") as f:
+        info = json.load(f)
+    model_name = info["name"]
+    model_version = info["version"]
+    print(f"Using champion model: {model_name}, version: {model_version}")
+    return f"models:/{model_name}/{model_version}"
+
 
 def find_latest_processed_file(processed_dir="/mnt/d/python/MLOps/clone/MLOPS/data/processed"):
     """
@@ -55,7 +51,7 @@ def main():
     wait_for_mlflow()
 
     # 2. Lấy model URI
-    model_uri = get_champion_model_uri(prefix="sentiment_")
+    model_uri = get_current_champion_uri()
     print(f"Loading champion model from '{model_uri}'")
     model = mlflow.pyfunc.load_model(model_uri)
 

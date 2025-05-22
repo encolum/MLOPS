@@ -16,14 +16,14 @@ load_dotenv(dotenv_path=env_path)
 print("DEBUG ENV:", {k: os.getenv(k) for k in os.environ if "TWITTER_" in k})
 
 SEARCH_KEYWORDS = [
-    'TrumpIsMyPresident LoveTrump  until 2025-04-20 since  2024-12-06',
-    'Trump2024 TrumpWon Election2024 until 2025-04-20 since 2025-01-01',
-    'ResistTrump NotMyPresident until 2025-04-20 since  2024-12-06',
-    'Election2024 Trump 2024 VoteForTrump VoteTrump until 2025-04-20 since  2024-12-06',
-    'Trump2024 Trump2025 until 2025-04-20 since  2024-12-06',
+    'TrumpIsMyPresident LoveTrump  until 2024-04-20 since  2023-01-01',
+    'Trump2024 TrumpWon Election2024 until 2024-04-20 since  2023-01-01',
+    'ResistTrump NotMyPresident until 2024-04-20 since  2023-01-01',
+    'Election2024 Trump 2024 VoteForTrump VoteTrump until 2024-04-20 since  2023-01-01',
+    'Trump2024 Trump2025 until 2024-04-20 since  2023-01-01',
 ]
 SEARCH_KEYWORD = "Trump2024"
-anti_trump_keywords = ["Trump","Donal"
+anti_trump_keywords = ["Trump","Donal",
      "never Trump","vote","election 2024","against","president","trump","MAGA",
     "January 6","2024 election","voters","vote","voting","winning",""
     "resist", "stop Trump", "never again", "vote him out",

@@ -38,7 +38,7 @@ class DataProcessor:
         self.db_host = os.getenv('DB_HOST', '172.21.80.1')
         self.db_port = os.getenv('DB_PORT', '5432')
         self.db_name = os.getenv('DB_NAME', 'mlops')
-        self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM comments_labeled')
+        self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM twitter_comments')
         self.df = None
 
 
@@ -49,15 +49,19 @@ class DataProcessor:
         with engine.connect() as conn:
             result = conn.execute(text(self.sql_query))
             self.df = pd.DataFrame(result.fetchall(), columns=result.keys())
+        # Lowercase all column names
+        self.df.columns = [col.lower() for col in self.df.columns]
         return self.df
 
     def clean_and_map(self, text_col='cleaned_text', label_col='sentiment'):
         self.df[text_col] = self.df[text_col].str.replace(r'[^a-zA-Z0-9\s]', '', regex=True)
         sentiment_map = {'Positive': 1, 'Negative': 0, 'Neutral': 2}
         self.df['sentiment_num'] = self.df[label_col].map(sentiment_map)
+        self.df = self.df.drop(columns=[label_col])
+        self.df = self.df.rename(columns={'sentiment_num': label_col})
         return self.df
 
-    def split(self, test_size=0.2, random_state=42, text_col='cleaned_text', label_col='sentiment_num'):
+    def split(self, test_size=0.2, random_state=42, text_col='cleaned_text', label_col='sentiment'):
         X = self.df[text_col]
         y = self.df[label_col]
         return train_test_split(X, y, test_size=test_size, random_state=random_state)

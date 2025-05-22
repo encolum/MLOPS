@@ -183,6 +183,9 @@ def preprocess_data(input_file, output_file=None):
         # Sort by date
         df = df.sort_values(by='date').reset_index(drop=True)
     
+    # Lowercase all column names before saving
+    df.columns = [col.lower() for col in df.columns]
+    
     # Save preprocessed data if output file is specified
     if output_file:
         df.to_csv(output_file, index=False)

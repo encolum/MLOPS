@@ -8,12 +8,15 @@ import great_expectations.expectations as gxe
 import logging
 from datetime import datetime
 
+# Ensure correct log directory exists
+os.makedirs("data/logs", exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/validation.log"),
+        logging.FileHandler("data/logs/validation.log"),
         logging.StreamHandler()
     ]
 )
