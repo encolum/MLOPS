@@ -30,7 +30,11 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
       - name: Run tests
         run: |
-            pytest tests/test.py
+            cd dockerfiles
+            docker compose up -d
+            sleep 5
+            pytest tests/test.py 
+            docker compose down
   deploy:
     needs: build-test
     runs-on: ubuntu-latest
