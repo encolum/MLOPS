@@ -36,10 +36,10 @@ jobs:
           docker compose build fastapi
           docker compose up -d
           echo "Waiting for FastAPI to start..."
-          sleep 15  # Chờ server khởi động (dựa trên thời gian local 16.18s)
-          docker compose logs fastapi  # Debug log
-          docker compose exec -T fastapi pytest test.py  # Đảm bảo tên file khớp
-          cat server_logs.txt
+          sleep 15
+          docker compose logs fastapi > server_logs.txt 2>&1
+          docker compose exec -T fastapi pytest test.py
+          cat server_logs.txt  # In log ra để debug
           docker compose down
 
   deploy:
