@@ -2,8 +2,7 @@
 import requests
 import pytest
 
-# URL của API (chạy local trên port 5001)
-BASE_URL = "http://localhost:5001"
+BASE_URL = "http://fastapi:5001"
 
 def test_health_endpoint():
     response = requests.get(f"{BASE_URL}/health")
