@@ -3,8 +3,8 @@ services:
   fastapi:
     image: fastapi-sentiment-server
     build:
-      context: /mnt/d/MLOps2
-      dockerfile: /mnt/d/MLOps2/dockerfiles/dockerfile
+      context: .
+      dockerfile: dockerfile
     ports:
       - "5001:5001"
     volumes:
