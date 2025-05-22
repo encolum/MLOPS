@@ -31,10 +31,10 @@ jobs:
       - name: Run tests
         run: |
             cd dockerfiles
-            docker compose build fastapi-server
+            docker compose build fastapi
             docker compose up -d
             sleep 10
-            docker compose exec -T fastapi-server pytest test.py
+            docker compose exec -T fastapi pytest test.py
             docker compose down
   deploy:
     needs: build-test
