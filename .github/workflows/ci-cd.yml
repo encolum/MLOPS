@@ -39,6 +39,7 @@ jobs:
           sleep 15  # Chờ server khởi động (dựa trên thời gian local 16.18s)
           docker compose logs fastapi  # Debug log
           docker compose exec -T fastapi pytest test.py  # Đảm bảo tên file khớp
+          cat server_logs.txt
           docker compose down
 
   deploy:
