@@ -1,4 +1,7 @@
+import requests
+import pytest
 from unittest.mock import MagicMock, patch
+BASE_URL = "http://fastapi:5001"
 
 def test_health_endpoint():
     with patch("requests.get") as mock_get:
