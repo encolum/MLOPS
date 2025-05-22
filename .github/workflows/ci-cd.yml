@@ -33,7 +33,8 @@ jobs:
             cd dockerfiles
             docker compose build fastapi
             docker compose up -d
-            sleep 10
+            echo "Waiting for FastAPI to start..."
+            docker compose logs fastapi
             docker compose exec -T fastapi pytest test.py
             docker compose down
   deploy:
