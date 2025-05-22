@@ -3,10 +3,10 @@ FROM python:3.10-slim
 WORKDIR /app
 
 RUN pip install --upgrade pip && pip install --no-cache-dir -U pip setuptools wheel
-COPY dockerfiles/requirements.txt .
+COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt  # Loại bỏ --no-cache-dir
 
-COPY model_pipeline/model_serve.py .
+COPY model_serve.py .
 
 EXPOSE 5001
 CMD ["uvicorn", "model_serve:app", "--host", "0.0.0.0", "--port", "5001"]
