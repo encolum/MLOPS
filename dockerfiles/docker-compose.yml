@@ -1,7 +1,5 @@
-version: '3.8'
 services:
   fastapi:
-    image: fastapi-sentiment-server
     build:
       context: .
       dockerfile: dockerfile
