@@ -1,15 +1,11 @@
-import requests
-import pytest
-from unittest.mock import patch
-
-BASE_URL = "http://fastapi:5001"
+from unittest.mock import MagicMock, patch
 
 def test_health_endpoint():
     with patch("requests.get") as mock_get:
-        mock_get.return_value = type('MockResponse', (), {
-            'status_code': 200,
-            'json': lambda: {"status": "healthy"}
-        })()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "healthy"}
+        mock_get.return_value = mock_response
         response = requests.get(f"{BASE_URL}/health")
         assert response.status_code == 200
         data = response.json()
@@ -18,10 +14,10 @@ def test_health_endpoint():
 
 def test_predict_endpoint_valid_input():
     with patch("requests.post") as mock_post:
-        mock_post.return_value = type('MockResponse', (), {
-            'status_code': 200,
-            'json': lambda: {"predictions": [2]}
-        })()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"predictions": [2]}
+        mock_post.return_value = mock_response
         payload = {"instances": [{"text": "I love Trump!"}]}
         response = requests.post(f"{BASE_URL}/predict", json=payload)
         assert response.status_code == 200
@@ -30,10 +26,10 @@ def test_predict_endpoint_valid_input():
 
 def test_predict_endpoint_invalid_input():
     with patch("requests.post") as mock_post:
-        mock_post.return_value = type('MockResponse', (), {
-            'status_code': 422,
-            'json': lambda: {"detail": "Invalid input"}
-        })()
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        mock_response.json.return_value = {"detail": "Invalid input"}
+        mock_post.return_value = mock_response
         payload = {"text": "I love Trump!"}
         response = requests.post(f"{BASE_URL}/predict", json=payload)
         assert response.status_code == 422
