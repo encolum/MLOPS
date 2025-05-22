@@ -23,20 +23,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r dockerfiles/requirements.txt
+          pip install pytest  # Đảm bảo pytest có trên runner để debug nếu cần
 
       - name: Lint with flake8
         run: |
           pip install flake8
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
       - name: Run tests
         run: |
-            cd dockerfiles
-            docker compose build fastapi
-            docker compose up -d
-            echo "Waiting for FastAPI to start..."
-            docker compose logs fastapi
-            docker compose exec -T fastapi pytest test.py
-            docker compose down
+          cd dockerfiles
+          docker compose build fastapi
+          docker compose up -d
+          echo "Waiting for FastAPI to start..."
+          sleep 15  # Chờ server khởi động (dựa trên thời gian local 16.18s)
+          docker compose logs fastapi  # Debug log
+          docker compose exec -T fastapi pytest test.py  # Đảm bảo tên file khớp
+          docker compose down
+
   deploy:
     needs: build-test
     runs-on: ubuntu-latest
@@ -55,9 +59,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/twitter_analysis:latest
+      - name: Build and push with Docker Compose
+        run: |
+          cd dockerfiles
+          docker compose build fastapi
+          docker save -o fastapi.tar $(docker images dockerfiles-fastapi -q)
+          docker load -i fastapi.tar
+          docker tag dockerfiles-fastapi:latest ${{ secrets.DOCKERHUB_USERNAME }}/twitter_analysis:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/twitter_analysis:latest
