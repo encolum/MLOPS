@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r dockerfiles/requirements.txt
           pip install pytest  # Đảm bảo pytest có trên runner để debug nếu cần
-
+          pip install pytest-mock
       - name: Lint with flake8
         run: |
           pip install flake8
