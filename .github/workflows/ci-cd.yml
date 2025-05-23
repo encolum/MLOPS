@@ -63,7 +63,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: dockerfiles  # Xác định đúng thư mục chứa Dockerfile
-          file: dockerfiles/dockerfile  # Đảm bảo path tới Dockerfile
+          context: dockerfiles 
+          file: dockerfiles/dockerfile 
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/twitter_analysis:latest
