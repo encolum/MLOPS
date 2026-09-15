@@ -1,20 +1,22 @@
 import mlflow
 import json
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-# 🔧 Thiết lập đúng tracking URI trỏ tới thư mục mlruns ở cấp trên
-tracking_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../mlruns"))
-mlflow.set_tracking_uri(f"file://{tracking_path}")
+MODEL_PIPELINE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = MODEL_PIPELINE_DIR.parent
+MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+LATEST_RUNS_PATH = PROJECT_ROOT / "latest_runs.json"
+load_dotenv(MODEL_PIPELINE_DIR / ".env")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", MLRUNS_DIR.as_uri()))
 
 def register_models(model_name_prefix="sentiment"):
     # Đường dẫn tuyệt đối đến latest_runs.json tại thư mục MLOPS
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    file_path = os.path.join(base_dir, "latest_runs.json")
+    if not LATEST_RUNS_PATH.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {LATEST_RUNS_PATH}")
 
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Không tìm thấy file: {file_path}")
-
-    with open(file_path, "r") as f:
+    with LATEST_RUNS_PATH.open("r") as f:
         latest_runs = json.load(f)
 
     client = mlflow.tracking.MlflowClient()

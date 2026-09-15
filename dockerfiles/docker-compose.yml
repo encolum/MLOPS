@@ -5,9 +5,8 @@ services:
       dockerfile: dockerfile
     ports:
       - "5001:5001"
-    volumes:
-      - /mnt/d/MLOps2/test_data.csv:/app/test_data.csv
-      - /mnt/d/MLOps2/latest_runs.json:/app/latest_runs.json
-      - /mnt/d/MLOps2/model_pipeline/mlruns:/mnt/d/MLOps2/model_pipeline/mlruns
-      - /mnt/d/MLOps2/model_pipeline/mlruns:/app/mlruns
+    environment:
+      MLFLOW_TRACKING_URI: ${DOCKER_MLFLOW_TRACKING_URI:-http://host.docker.internal:5000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     container_name: fastapi-server

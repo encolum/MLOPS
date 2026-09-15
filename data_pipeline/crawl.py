@@ -1,19 +1,18 @@
 import asyncio
 import os
-import json
 import csv
 import datetime
 import random
+from pathlib import Path
 from dotenv import load_dotenv
 from twikit import Client
 import re
-import sys
 
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-load_dotenv(dotenv_path=env_path)
+DATA_PIPELINE_DIR = Path(__file__).resolve().parent
+RAW_DIR = DATA_PIPELINE_DIR / "raw"
+COOKIE_DIR = DATA_PIPELINE_DIR / "cookies"
 
-# ⚠️ Nếu muốn debug giá trị .env đang load:
-print("DEBUG ENV:", {k: os.getenv(k) for k in os.environ if "TWITTER_" in k})
+load_dotenv(dotenv_path=DATA_PIPELINE_DIR / ".env")
 
 SEARCH_KEYWORDS = [
     'TrumpIsMyPresident LoveTrump  until 2025-04-20 since  2024-12-06',
@@ -22,17 +21,16 @@ SEARCH_KEYWORDS = [
     'Election2024 Trump 2024 VoteForTrump VoteTrump until 2025-04-20 since  2024-12-06',
     'Trump2024 Trump2025 until 2025-04-20 since  2024-12-06',
 ]
-SEARCH_KEYWORD = "Trump2024"
-anti_trump_keywords = ["Trump","Donal"
-     "never Trump","vote","election 2024","against","president","trump","MAGA",
-    "January 6","2024 election","voters","vote","voting","winning",""
+anti_trump_keywords = ["Trump", "Donald",
+    "never Trump", "vote", "election 2024", "against", "president", "trump", "MAGA",
+    "January 6", "2024 election", "voters", "vote", "voting", "winning",
     "resist", "stop Trump", "never again", "vote him out",
     "Trump is a threat", "Trumpism is dangerous", "danger to America", "America deserves better","Not My President",
     "Never Trump",
     "Resist Trump",
     "Dump Trump",
     "Stop Trump",
-    "No More Trump","Former President","Election campaign","Nonpartisan report"
+    "No More Trump","Former President","Election campaign","Nonpartisan report",
     "Reject Trump",
     "Block Trump",
     "Trump is not above the law",
@@ -40,12 +38,12 @@ anti_trump_keywords = ["Trump","Donal"
     "President Trump",
     "Donald J. Trump",
     "Mr. Trump",
-    "DJT","white house","White House"
+    "DJT","white house","White House",
     "The Donald",
     "Former President Trump",
     "Trump 2024", "Drumpf",                # Họ gốc của gia đình Trump (John Oliver từng nhấn mạnh)
-    "considering","listening to all candidates","not a fan, but not a hater either","hope the winner serves the country"
-    "Trumpanzee","win","congratulations","congratulate","congrats","victory","victorious","any candidate as long as","fair debate"
+    "considering","listening to all candidates","not a fan, but not a hater either","hope the winner serves the country",
+    "Trumpanzee","win","congratulations","congratulate","congrats","victory","victorious","any candidate as long as","fair debate",
     "Donny","listen further","candidate","not a fan","not a supporter","not a follower","not a believer","not a devotee",
     "Traitor Trump",
     "Impeached President","win","won","lose"," election","not vote","American 2024"
@@ -56,9 +54,7 @@ SEARCH_BATCH_SIZE = 100
 NUM_BATCHES_NEEDED = (TARGET_TWEETS + SEARCH_BATCH_SIZE - 1) // SEARCH_BATCH_SIZE
 DELAY_BETWEEN_BATCHES_MIN = 50
 DELAY_BETWEEN_BATCHES_MAX = 80
-OUTPUT_DIR = "./raw"
-COOKIE_DIR = "./cookies"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+RAW_DIR.mkdir(parents=True, exist_ok=True)
 
 def contains_anti_trump_keyword(text):
     text_lower = text.lower()
@@ -70,8 +66,6 @@ def is_valid_text(text):
     return len(words) >= 3
 def extract_hashtags_from_text(text):
     return re.findall(r"#\w+", text)
-def sanitize_filename(name):
-    return re.sub(r'[\\/*?:"<>|]', "_", name)
 async def login_account(account_info):
     username = account_info['username']
     email = account_info['email']
@@ -105,15 +99,12 @@ async def login_account(account_info):
 async def main_keyword_scrape(accounts_credentials, active_clients):
     
     print("\n--- Step 1: Login to Twitter accounts ---")
-    client_map = {}
-    
     for i, creds in enumerate(accounts_credentials):
         print(f"Processing account {i + 1}/{len(accounts_credentials)}...")
         client = await login_account(creds)
         accounts_credentials[i]['client'] = client
         if client:
             active_clients.append(client)
-        client_map[creds['id']] = client
         print(f"Account {creds['id']} ready.")
     
     print(f"\n>>> Successfully logged in with {len(active_clients)} accounts.")
@@ -128,10 +119,9 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
     total_tweets_collected_so_far = 0
 
     for keyword in SEARCH_KEYWORDS:
+        if total_tweets_collected_so_far >= TARGET_TWEETS:
+            break
         print(f"\n--- Scanning with keyword: {keyword} ---")
-        global SEARCH_KEYWORD
-        SEARCH_KEYWORD = keyword
-        num_batches_collected = 0
 
         for batch_num in range(NUM_BATCHES_NEEDED):
             if total_tweets_collected_so_far >= TARGET_TWEETS:
@@ -207,8 +197,8 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
 
     # --- Save file ---
     if all_tweets_data:
-        cleaned_keyword = sanitize_filename(SEARCH_KEYWORD.strip())
-        output_filename = os.path.join(OUTPUT_DIR, f"twitter_data_{cleaned_keyword}.csv")
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        output_filename = RAW_DIR / f"twitter_data_{timestamp}.csv"
         with open(output_filename, mode='w', newline='', encoding='utf-8') as csv_file:
             fieldnames = all_tweets_data[0].keys()
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -227,7 +217,7 @@ async def crawl():
         email = os.getenv(f'TWITTER_EMAIL_{i}')
         password = os.getenv(f'TWITTER_PASSWORD_{i}')
         cookie_file_base = username if username else f"account_{i}"
-        cookie_file = os.path.join(COOKIE_DIR, f"twikit_cookies_{cookie_file_base}.json")
+        cookie_file = COOKIE_DIR / f"twikit_cookies_{cookie_file_base}.json"
         
         if not (username and email and password):
             print(f"!!! ERROR: Missing information for account {i} in .env")
@@ -242,25 +232,12 @@ async def crawl():
                 'client': None
             })
 
-    print('Loading credentials...')
-    active_clients = []
-    for i, creds in enumerate(accounts_credentials):
-        print(f"Processing account {i + 1}/{len(accounts_credentials)}...")
-        client = await login_account(creds)
-        if client:
-            creds['client'] = client
-            active_clients.append(client)
-        else:
-            print(f"!!! [Tài khoản {creds['id']}] Không thể hoàn tất đăng nhập.")
-    if not active_clients:
-        print("!!! Không có tài khoản nào đăng nhập thành công. Dừng chương trình.")
-        sys.exit(1)
-        
-    print(f"\n>>> Đã đăng nhập thành công với {len(active_clients)} tài khoản.")
-    await main_keyword_scrape(accounts_credentials, active_clients)
+    if not all_credentials_loaded:
+        raise RuntimeError("Missing required Twitter credentials")
+
+    await main_keyword_scrape(accounts_credentials, [])
 if __name__ == "__main__":
     import nest_asyncio
     import asyncio
     nest_asyncio.apply()
     asyncio.run(crawl())
-    

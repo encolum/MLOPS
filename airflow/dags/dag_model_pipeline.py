@@ -8,6 +8,17 @@ from airflow.utils.db import provide_session
 from airflow.utils.state import State
 from airflow.utils.trigger_rule import TriggerRule
 from sqlalchemy import desc
+from pathlib import Path
+import shlex
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MODEL_PIPELINE_DIR = PROJECT_ROOT / "model_pipeline"
+COMPOSE_FILE = PROJECT_ROOT / "dockerfiles" / "docker-compose.yml"
+
+
+def python_command(script):
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
 
 default_args = {
     'owner': 'airflow',
@@ -61,8 +72,6 @@ dag = DAG(
     description='Run model training every 15 days, but validate/deploy/predict daily',
 )
 
-# PYTHON = '/home/tpa/venvs/mlops310/bin/python'
-
 # --- Tasks ---
 check_training = PythonOperator(
     task_id='check_training_condition',
@@ -73,39 +82,38 @@ check_training = PythonOperator(
 
 model_training = BashOperator(
     task_id='model_training',
-    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_training.py',
+    bash_command=python_command(MODEL_PIPELINE_DIR / "model_training.py"),
     dag=dag,
 )
 
 model_deploy = BashOperator(
     task_id='model_deploy',
-    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_deploy.py',
-    trigger_rule=TriggerRule.ALL_DONE,
+    bash_command=python_command(MODEL_PIPELINE_DIR / "model_deploy.py"),
+    trigger_rule=TriggerRule.ALL_SUCCESS,
     dag=dag,
 )
 
 model_validate = BashOperator(
     task_id='model_validate',
-    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_validate.py',
-    trigger_rule=TriggerRule.ALL_DONE,
+    bash_command=python_command(MODEL_PIPELINE_DIR / "model_validate.py"),
+    trigger_rule=TriggerRule.ALL_SUCCESS,
     dag=dag,
 )
 
 model_serve = BashOperator(
     task_id='model_serve',
-    bash_command=f'python /mnt/d/MLOps2/model_pipeline/model_serve.py',
-    trigger_rule=TriggerRule.ALL_DONE,
+    bash_command=f"docker compose -f {shlex.quote(str(COMPOSE_FILE))} up -d",
+    trigger_rule=TriggerRule.ALL_SUCCESS,
     dag=dag,
 )
 
 send_request = BashOperator(
     task_id='send_request',
-    bash_command=f'python /mnt/d/MLOps2/model_pipeline/send_request.py',
-    trigger_rule=TriggerRule.ALL_DONE,
+    bash_command=python_command(MODEL_PIPELINE_DIR / "send_request.py"),
+    trigger_rule=TriggerRule.ALL_SUCCESS,
     dag=dag,
 )
 
 # --- DAG chaining ---
 check_training >> model_training
-model_training >> model_deploy >> model_validate >> model_serve >> send_request
-check_training >> model_deploy  # skip training vẫn chạy các task sau
+model_training >> model_validate >> model_deploy >> model_serve >> send_request

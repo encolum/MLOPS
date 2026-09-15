@@ -5,9 +5,14 @@ import re
 import ast
 import logging
 import os
+from pathlib import Path
 from datetime import datetime
-# Create logs directory
-os.makedirs("logs", exist_ok=True)
+
+DATA_PIPELINE_DIR = Path(__file__).resolve().parent
+RAW_DIR = DATA_PIPELINE_DIR / "raw"
+PROCESSED_DIR = DATA_PIPELINE_DIR / "processed"
+LOG_DIR = DATA_PIPELINE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Simple configuration with just console output
 logging.basicConfig(
@@ -193,21 +198,21 @@ def preprocess_data(input_file, output_file=None):
     return df
     
 if __name__ == "__main__":
-    os.makedirs("./logs", exist_ok=True)
-    os.makedirs("./processed", exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     
     # Default input is the latest file in raw directory
-    input_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raw")
+    input_dir = RAW_DIR
     all_files = [f for f in os.listdir(input_dir) if f.endswith('.csv')]
     if not all_files:
         print("No input files found!")
     else:
-        latest_file = max(all_files, key=lambda f: os.path.getmtime(os.path.join(input_dir, f)))
-        input_file = os.path.join(input_dir, latest_file)
+        latest_file = max(all_files, key=lambda f: (input_dir / f).stat().st_mtime)
+        input_file = input_dir / latest_file
         
         # Generate output filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "processed", f"processed_twitter_{timestamp}.csv")
+        output_file = PROCESSED_DIR / f"processed_twitter_{timestamp}.csv"
         
         # Run preprocessing
         df = preprocess_data(input_file, output_file)

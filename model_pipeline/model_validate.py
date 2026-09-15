@@ -2,11 +2,18 @@ import pandas as pd
 import mlflow
 import json
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 # Thiết lập tracking URI trỏ đến thư mục mlruns trong MLOPS
-tracking_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../mlruns"))
-mlflow.set_tracking_uri(f"file://{tracking_path}")
+MODEL_PIPELINE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = MODEL_PIPELINE_DIR.parent
+MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+LATEST_RUNS_PATH = PROJECT_ROOT / "latest_runs.json"
+TEST_DATA_PATH = PROJECT_ROOT / "test_data.csv"
+load_dotenv(MODEL_PIPELINE_DIR / ".env")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", MLRUNS_DIR.as_uri()))
 
 def validate_model(model_uri, test_data_path):
     test_df = pd.read_csv(test_data_path)
@@ -35,15 +42,12 @@ def validate_model(model_uri, test_data_path):
 
 if __name__ == "__main__":
     # Đọc latest_runs.json từ thư mục gốc (MLOPS)
-    latest_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../latest_runs.json"))
-    if not os.path.exists(latest_path):
-        raise FileNotFoundError(f"Không tìm thấy file: {latest_path}")
+    if not LATEST_RUNS_PATH.exists():
+        raise FileNotFoundError(f"Không tìm thấy file: {LATEST_RUNS_PATH}")
 
-    with open(latest_path, "r") as f:
+    with LATEST_RUNS_PATH.open("r") as f:
         latest_runs = json.load(f)
 
     for model_name, run_id in latest_runs.items():
         print(f"Validating model: {model_name}")
-        test_data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../test_data.csv"))
-        validate_model(f"runs:/{run_id}/model", test_data_path)
-
+        validate_model(f"runs:/{run_id}/model", TEST_DATA_PATH)

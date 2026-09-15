@@ -7,20 +7,24 @@ from sqlalchemy import create_engine, text
 import os
 import sys
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+DATA_PIPELINE_DIR = Path(__file__).resolve().parent
+LABELED_DIR = DATA_PIPELINE_DIR / "labeled"
+
+# Load environment variables from the data pipeline directory.
+load_dotenv(DATA_PIPELINE_DIR / ".env")
 
 def connect_to_db(db_name="postgres"):
     """Create database connection using environment variables"""
     db_user = os.getenv("DB_USER", "mlops_user")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST", "172.21.80.1")
+    db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
     
     conn_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
@@ -90,18 +94,16 @@ def load_data_to_db(csv_file, db_name, table_name, if_exists="replace"):
 
 def get_latest_labeled_file():
         """Get the latest labeled file from the labeled directory"""
-        labeled_dir = '/mnt/d/MLOps2/data/labeled'
-        files = [f for f in os.listdir(labeled_dir) if f.endswith('.csv')]
+        files = [f for f in LABELED_DIR.iterdir() if f.suffix == '.csv'] if LABELED_DIR.exists() else []
         if not files:
             return None
-        latest_file = max(files, key=lambda x: os.path.getctime(os.path.join(labeled_dir, x)))
-        return os.path.join(labeled_dir, latest_file)
+        return max(files, key=lambda path: path.stat().st_mtime)
 
 def test_connection():
     """Test the database connection properly using psycopg2"""
     db_user = os.getenv("DB_USER", "postgres")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST", "host.docker.internal")
+    db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
     
     try:
@@ -148,9 +150,9 @@ def main():
     # Get default input file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     try:
-        default_input = get_latest_labeled_file() or f'/mnt/d/MLOps2/data/labeled/labeled_twitter_{timestamp}.csv'
+        default_input = get_latest_labeled_file() or LABELED_DIR / f'labeled_twitter_{timestamp}.csv'
     except Exception as e:
-        default_input = f'/mnt/d/MLOps2/data/labeled/labeled_twitter_{timestamp}.csv'
+        default_input = LABELED_DIR / f'labeled_twitter_{timestamp}.csv'
         print(f"⚠️ Không thể tìm thấy file CSV mặc định: {e}")
     
     # Parse command line arguments
@@ -187,7 +189,7 @@ def main():
     # Use the same connection parameters that worked in test_connection()
     db_user = os.getenv("DB_USER", "postgres")
     db_password = os.getenv("DB_PASSWORD")
-    db_host = os.getenv("DB_HOST", "host.docker.internal")
+    db_host = os.getenv("DB_HOST", "localhost")
     db_port = os.getenv("DB_PORT", "5432")
     
     # Load a small piece of data first to test the connection thoroughly
@@ -256,8 +258,7 @@ def main():
         print(f"✅ Đã load thành công {len(df)} dòng vào {args.database}.{args.table}")
         
     except Exception as e:
-        print(f"❌ Lỗi: {str(e)}")
-        print("Đang chuyển sang giải pháp sử dụng SQLite...")
+        logger.exception(f"Ingestion failed: {e}")
         
         # # Phương án dự phòng: Lưu vào SQLite
         # try:
@@ -280,6 +281,7 @@ def main():
         # except Exception as sqlite_error:
         #     print(f"❌ Lỗi khi lưu vào SQLite: {str(sqlite_error)}")
         #     sys.exit(1)
+        raise
 
 if __name__ == "__main__":
     main()

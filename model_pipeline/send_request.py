@@ -1,12 +1,16 @@
 import mlflow
 import requests
-import json
 from mlflow.tracking import MlflowClient
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-# Thiết lập tracking URI nếu cần
-tracking_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../mlruns"))
-mlflow.set_tracking_uri(f"file://{tracking_path}")
+MODEL_PIPELINE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = MODEL_PIPELINE_DIR.parent
+MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+load_dotenv(MODEL_PIPELINE_DIR / ".env")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", MLRUNS_DIR.as_uri()))
+FASTAPI_URL = os.getenv("FASTAPI_URL", "http://localhost:5001").rstrip("/")
 
 def get_champion_model_info(prefix="sentiment_"):
     client = MlflowClient()
@@ -21,32 +25,26 @@ def send_request():
     # === Lấy thông tin mô hình champion ===
     model_name, model_version, model_stage = get_champion_model_info()
     if not model_name:
-        print(" No champion model found.")
-        return
+        raise RuntimeError("No champion model found")
 
     # === Dữ liệu test mẫu ===
     input_text = "Donald Trump is the 45th president of the United States."
     payload = {
-        "dataframe_records": [
+        "instances": [
             {"text": input_text}
         ]
     }
 
-    url = "http://localhost:5001/invocations"
-    headers = {"Content-Type": "application/json"}
+    url = f"{FASTAPI_URL}/predict"
 
     # === Gửi request đến endpoint đã serve ===
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        if response.status_code == 200:
-            prediction = response.json()
-            print(f"Prediction: {prediction}")
-        else:
-            print(f"Failed: {response.status_code} | {response.text}")
-            prediction = None
+        response = requests.post(url, json=payload, timeout=30)
+        response.raise_for_status()
+        prediction = response.json()["predictions"]
+        print(f"Prediction: {prediction}")
     except requests.exceptions.RequestException as e:
-        print(f"Request error: {e}")
-        prediction = None
+        raise RuntimeError(f"Request error: {e}") from e
 
     # === Ghi log vào MLflow ===
     mlflow.set_experiment("sentiment-analysis")

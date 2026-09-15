@@ -3,10 +3,11 @@ import os
 import sys
 import json
 import requests
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env
-load_dotenv()
+# Load environment variables from .env next to this script.
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 # Grafana configuration
 grafana_host    = os.getenv("GRAFANA_HOST", "http://localhost:3000")
