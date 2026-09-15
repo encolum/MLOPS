@@ -5,54 +5,105 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Check Python syntax and critical lint rules
         run: |
           python -m pip install --upgrade pip
-          pip install -r dockerfiles/requirements.txt
-          pip install pytest  # Đảm bảo pytest có trên runner để debug nếu cần
-          pip install pytest-mock
-      - name: Lint with flake8
-        run: |
-          pip install flake8
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          python -m pip install ruff==0.16.7
+          python -m compileall -q airflow/dags data_pipeline model_pipeline dockerfiles/model_serve.py
+          ruff check . --select E9,F63,F7,F82
 
-      - name: Run tests
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        uses: docker/build-push-action@v7
+        with:
+          context: dockerfiles
+          file: dockerfiles/dockerfile
+          load: true
+          push: false
+          tags: twitter-analysis:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test real API container
+        shell: bash
         run: |
-          cd dockerfiles
-          docker compose build fastapi
-          docker compose up -d
-          echo "Waiting for FastAPI to start..."
-          sleep 15
-          docker compose logs fastapi > server_logs.txt 2>&1
-          docker compose exec -T fastapi pytest test.py
-          cat server_logs.txt  # In log ra để debug
-          docker compose down
+          docker run --detach --name fastapi-ci -p 5001:5001 twitter-analysis:ci
+
+          status="000"
+          for attempt in {1..30}; do
+            status=$(curl --silent --output /tmp/health.json --write-out "%{http_code}" http://127.0.0.1:5001/health || true)
+            if [ "$status" = "200" ] || [ "$status" = "503" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$status" != "503" ]; then
+            echo "Expected HTTP 503 because CI has no model artifact, received: $status"
+            cat /tmp/health.json 2>/dev/null || true
+            exit 1
+          fi
+
+          curl --fail --silent http://127.0.0.1:5001/openapi.json > /tmp/openapi.json
+          python - <<'PY'
+          import json
+
+          with open("/tmp/openapi.json", encoding="utf-8") as file:
+              schema = json.load(file)
+
+          assert "/health" in schema["paths"]
+          assert "/predict" in schema["paths"]
+          PY
+
+          invalid_status=$(curl --silent --output /tmp/invalid.json --write-out "%{http_code}" \
+            --request POST http://127.0.0.1:5001/predict \
+            --header "Content-Type: application/json" \
+            --data '{"text":"missing instances"}')
+          test "$invalid_status" = "422"
+
+      - name: Show API logs and clean up
+        if: always()
+        run: |
+          docker logs fastapi-ci 2>&1 || true
+          docker rm --force fastapi-ci 2>/dev/null || true
 
   deploy:
     needs: build-test
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -61,9 +112,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
-          context: dockerfiles 
-          file: dockerfiles/dockerfile 
+          context: dockerfiles
+          file: dockerfiles/dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/twitter_analysis:latest
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/twitter_analysis:latest
+            ${{ secrets.DOCKER_USERNAME }}/twitter_analysis:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

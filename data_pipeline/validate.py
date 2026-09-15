@@ -7,6 +7,11 @@ import great_expectations as gx
 import great_expectations.expectations as gxe
 import logging
 from datetime import datetime
+from pathlib import Path
+
+DATA_PIPELINE_DIR = Path(__file__).resolve().parent
+LABELED_DIR = DATA_PIPELINE_DIR / "labeled"
+LOG_DIR = DATA_PIPELINE_DIR / "logs"
 
 # Configure logging
 logging.basicConfig(
@@ -219,27 +224,6 @@ class TwitterDataValidator:
         }
     
         
-    # def validate_sentiment_distribution(self):
-    #     """Validate sentiment labels have reasonable distribution."""
-    #     logger.info("Validating sentiment distribution")
-        
-    #     # Check that we have at least 10% of each sentiment class
-    #     expectation = gxe.ExpectColumnDistinctValuesToContainSet(
-    #         column="Sentiment", 
-    #         value_set=["Positive", "Neutral", "Negative"]
-    #     )
-    #     result = self.batch.validate(expectation)
-    #     self.validation_results.append({
-    #         "check": "sentiment_values",
-    #         "success": result.success,
-    #         "details": result
-    #     })
-        
-        # Add this to your run_all_validations method
-        # self.validate_sentiment_distribution(),
-        
-        return result.success
-
 def validate_dataset(filepath=None, df=None):
     """
     Validate Twitter dataset.
@@ -251,7 +235,7 @@ def validate_dataset(filepath=None, df=None):
     Returns:
         Validation summary
     """
-    os.makedirs("logs", exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     
     validator = TwitterDataValidator(df=df, filepath=filepath)
     validator.run_all_validations()
@@ -268,24 +252,24 @@ def validate_dataset(filepath=None, df=None):
 
 if __name__ == "__main__":
     # Find latest file in processed directory
-    processed_dir = "./labeled"
-    if not os.path.exists(processed_dir):
-        print("Labeled directory not found!")
-    else:
-        all_files = [f for f in os.listdir(processed_dir) if f.endswith('.csv')]
-        if not all_files:
-            print("No labeled files found!")
-        else:
-            latest_file = max(all_files, key=lambda f: os.path.getmtime(os.path.join(processed_dir, f)))
-            filepath = os.path.join(processed_dir, latest_file)
-            
-            print(f"Validating {filepath}...")
-            summary = validate_dataset(filepath=filepath)
-            
-            if summary['all_passed']:
-                print("✅ All validation checks passed!")
-            else:
-                print(f"❌ {summary['failed_checks']} validation checks failed!")
-                for result in summary['results']:
-                    if not result['success']:
-                        print(f"  - Failed: {result['check']}")
+    processed_dir = LABELED_DIR
+    if not processed_dir.exists():
+        raise FileNotFoundError(f"Labeled directory not found: {processed_dir}")
+
+    all_files = list(processed_dir.glob("*.csv"))
+    if not all_files:
+        raise FileNotFoundError(f"No labeled CSV files found in {processed_dir}")
+
+    filepath = max(all_files, key=lambda path: path.stat().st_mtime)
+    print(f"Validating {filepath}...")
+    summary = validate_dataset(filepath=filepath)
+
+    if not summary['all_passed']:
+        failed = [
+            result['check']
+            for result in summary['results']
+            if not result['success']
+        ]
+        raise RuntimeError(f"Data validation failed: {', '.join(failed)}")
+
+    print("✅ All validation checks passed!")

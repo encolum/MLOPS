@@ -10,9 +10,21 @@ from airflow.exceptions import AirflowSkipException, AirflowFailException
 from sqlalchemy import desc
 import requests
 import time
+from pathlib import Path
+import shlex
+import sys
 # Import necessary Airflow models
 from airflow.models.taskinstance import TaskInstance 
 from airflow.models.dagrun import DagRun           
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_PIPELINE_DIR = PROJECT_ROOT / "data_pipeline"
+MODEL_PIPELINE_DIR = PROJECT_ROOT / "model_pipeline"
+COMPOSE_FILE = PROJECT_ROOT / "dockerfiles" / "docker-compose.yml"
+
+
+def python_command(script):
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
 
 
 # Default args for all tasks
@@ -119,13 +131,13 @@ with DAG(
     # Step 1: Crawl raw Twitter data
     crawl_data = BashOperator(
         task_id='crawl_data',
-        bash_command='python /mnt/d/MLOps2/data/crawl.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "crawl.py")
     )
 
     # Step 2: Preprocess tweets
     preprocess_data = BashOperator(
         task_id='preprocess_data',
-        bash_command='python /mnt/d/MLOps2/data/preprocessing.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "preprocessing.py")
     )
 
     # Step 3: Check if it's training day or not
@@ -137,38 +149,38 @@ with DAG(
     # Step 4: Train the model (only runs on training days)
     train_model = BashOperator(
         task_id='train_model',
-        bash_command='python /mnt/d/MLOps2/model_pipeline/model_training.py',
+        bash_command=python_command(MODEL_PIPELINE_DIR / "model_training.py"),
     )
 
     model_deploy = BashOperator(
         task_id='model_deploy',
-        bash_command='python /mnt/d/MLOps2/model_pipeline/model_deploy.py',
-        trigger_rule=TriggerRule.ALL_DONE,
+        bash_command=python_command(MODEL_PIPELINE_DIR / "model_deploy.py"),
+        trigger_rule=TriggerRule.ALL_SUCCESS,
     )
 
     # Step 6: Validate the new model (only on training days)
     model_validate = BashOperator(
         task_id='model_validate',
-        bash_command='python /mnt/d/MLOps2/model_pipeline/model_validate.py',
-        trigger_rule=TriggerRule.ALL_DONE, 
+        bash_command=python_command(MODEL_PIPELINE_DIR / "model_validate.py"),
+        trigger_rule=TriggerRule.ALL_SUCCESS,
     )
 
     # Step 7: Serve the new model (only on training days)
     # model_serve = BashOperator(
     #     task_id='model_serve',
-    #     bash_command='python /mnt/d/MLOps2/model_pipeline/model_serve.py',
+    #     bash_command=python_command(MODEL_PIPELINE_DIR / "model_serve.py"),
     #     trigger_rule=TriggerRule.ALL_DONE,
     # )
     model_serve = BashOperator(
     task_id='model_serve',
-    bash_command='docker compose -f /mnt/d/MLOps2/dockerfiles/docker-compose.yml up -d',
+    bash_command=f"docker compose -f {shlex.quote(str(COMPOSE_FILE))} up -d",
     trigger_rule=TriggerRule.ALL_SUCCESS,
 )
 
     # Step 8: Predict using the current model (for both training and non-training days)
     predict_data = BashOperator(
         task_id='predict_data',
-        bash_command='python /mnt/d/MLOps2/model_pipeline/predict.py',
+        bash_command=python_command(MODEL_PIPELINE_DIR / "predict.py"),
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -176,7 +188,7 @@ with DAG(
     # Step 9: Validate the data (after prediction)
     validate_data = BashOperator(
         task_id='validate_data',
-        bash_command='python /mnt/d/MLOps2/data/validate.py',
+        bash_command=python_command(DATA_PIPELINE_DIR / "validate.py"),
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -184,7 +196,7 @@ with DAG(
     # Step 10: Ingest data into PostgreSQL
     ingest_data = BashOperator(
         task_id='ingest_data',
-        bash_command='python /mnt/d/MLOps2/data/ingest.py',
+        bash_command=python_command(DATA_PIPELINE_DIR / "ingest.py"),
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
 
     )
@@ -201,11 +213,10 @@ with DAG(
     check_training >> [train_model, skip_training]
     
     # Path taken if training occurs
-    train_model >> model_deploy >> model_validate >> model_serve >> predict_data
+    train_model >> model_validate >> model_deploy >> model_serve >> predict_data
 
     # Path taken if training is skipped
     skip_training >> predict_data
 
     # Tasks after the branch merges
     predict_data >> validate_data >> ingest_data
-

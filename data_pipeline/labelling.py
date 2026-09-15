@@ -7,17 +7,24 @@ import requests
 import time
 import re
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+DATA_PIPELINE_DIR = Path(__file__).resolve().parent
+PROCESSED_DIR = DATA_PIPELINE_DIR / "processed"
+LABELED_DIR = DATA_PIPELINE_DIR / "labeled"
+LOG_DIR = DATA_PIPELINE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Load environment variables from the data pipeline directory.
+load_dotenv(DATA_PIPELINE_DIR / ".env")
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/labeling.log"),
+        logging.FileHandler(LOG_DIR / "labeling.log"),
         logging.StreamHandler()
     ]
 )
@@ -65,14 +72,14 @@ def classify_comment(comment):
     }
 
     try:
-        response = requests.post(ENDPOINT, headers=headers, json=data)
+        response = requests.post(ENDPOINT, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         result = response.json()
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
         return extract_sentiment(raw_text)
     except Exception as e:
-        logger.error(f"Classification error: {comment[:60]}... \n{e}")
-        return "Error"
+        logger.exception(f"Classification error: {comment[:60]}... \n{e}")
+        raise
 
 def label_dataset(input_file, output_file=None, text_column="cleaned_text", 
                  label_column="Sentiment", rate_limit_delay=2):
@@ -105,7 +112,7 @@ def label_dataset(input_file, output_file=None, text_column="cleaned_text",
         df[label_column] = ""
     
     # Temporary output file for incremental saving
-    temp_output_file = output_file if output_file else "data/labeled/labeled_temp.csv"
+    temp_output_file = output_file if output_file else LABELED_DIR / "labeled_temp.csv"
     
     # Track progress
     rows_processed = 0
@@ -152,9 +159,11 @@ def label_dataset(input_file, output_file=None, text_column="cleaned_text",
     
     except KeyboardInterrupt:
         logger.warning("Labeling interrupted by user")
+        raise
     
     except Exception as e:
-        logger.error(f"Error during labeling: {e}")
+        logger.exception(f"Error during labeling: {e}")
+        raise
     
     finally:
         # Final save
@@ -167,30 +176,28 @@ def label_dataset(input_file, output_file=None, text_column="cleaned_text",
         logger.info(f"Labeling complete: {rows_labeled} rows labeled out of {rows_processed} processed")
         logger.info(f"Total time: {elapsed/60:.1f} minutes")
         
-        # Return the dataframe with labels
-        return df
+    return df
 
 if __name__ == "__main__":
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("./labeled", exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LABELED_DIR.mkdir(parents=True, exist_ok=True)
     
     # Find latest file in processed directory
-    processed_dir = "./processed"
-    if not os.path.exists(processed_dir):
-        print("Processed directory not found!")
-    else:
-        all_files = [f for f in os.listdir(processed_dir) if f.endswith('.csv')]
-        if not all_files:
-            print("No processed files found!")
-        else:
-            latest_file = max(all_files, key=lambda f: os.path.getmtime(os.path.join(processed_dir, f)))
-            input_file = os.path.join(processed_dir, latest_file)
-            
-            # Generate output filename with timestamp
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_file = f"./labeled/labeled_twitter_{timestamp}.csv"
-            
-            # Run labeling
-            print(f"Labeling {input_file}...")
-            label_dataset(input_file, output_file)
-            print(f"Labeled data saved to {output_file}")
+    processed_dir = PROCESSED_DIR
+    if not processed_dir.exists():
+        raise FileNotFoundError(f"Processed directory not found: {processed_dir}")
+
+    all_files = list(processed_dir.glob("*.csv"))
+    if not all_files:
+        raise FileNotFoundError(f"No processed CSV files found in {processed_dir}")
+
+    input_file = max(all_files, key=lambda path: path.stat().st_mtime)
+
+    # Generate output filename with timestamp
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    output_file = LABELED_DIR / f"labeled_twitter_{timestamp}.csv"
+
+    # Run labeling
+    print(f"Labeling {input_file}...")
+    label_dataset(input_file, output_file)
+    print(f"Labeled data saved to {output_file}")

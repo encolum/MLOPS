@@ -3,6 +3,17 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime, timedelta
+from pathlib import Path
+import shlex
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_PIPELINE_DIR = PROJECT_ROOT / "data_pipeline"
+MODEL_PIPELINE_DIR = PROJECT_ROOT / "model_pipeline"
+
+
+def python_command(script):
+    return f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
 
 # Default args for all tasks
 default_args = {
@@ -35,13 +46,13 @@ with DAG(
     # Step 1: Crawl raw Twitter data
     crawl_data = BashOperator(
         task_id='crawl_data',
-        bash_command='python3 /mnt/d/MLOps2/data/crawl.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "crawl.py")
     )
 
     # Step 2: Preprocess tweets
     preprocess_data = BashOperator(
         task_id='preprocess_data',
-        bash_command='python3 /mnt/d/MLOps2/data/preprocessing.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "preprocessing.py")
     )
 
     # Step 3: Labelling data by inference
@@ -49,19 +60,19 @@ with DAG(
     #Predict using champion model from MLflow
     predict_data = BashOperator(
         task_id='predict_data',
-        bash_command='python3 /mnt/d/MLOps2/model_pipeline/predict.py'
+        bash_command=python_command(MODEL_PIPELINE_DIR / "predict.py")
     )
 
     # Step 4: Validate data
     validate_data = BashOperator(
         task_id='validate_data',
-        bash_command='python3 /mnt/d/MLOps2/data/validate.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "validate.py")
     )
 
     # Step 5: Ingest into PostgreSQL
     ingest_data = BashOperator(
         task_id='ingest_data',
-        bash_command='python3 /mnt/d/MLOps2/data/ingest.py'
+        bash_command=python_command(DATA_PIPELINE_DIR / "ingest.py")
     )
 
     # # Step 6: Train model on new labeled dataset

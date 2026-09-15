@@ -5,18 +5,47 @@ airflow/logs/
 
 # Virtual env
 venv/
+.venv/
 mlops/bin/
 mlops/lib/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+.tox/
+.nox/
 
 # Artifacts
 mlruns/
 model_pipeline/mlruns/
 model_pipeline/*_saved/
+model_pipeline/predicted/
+data_pipeline/raw/
+data_pipeline/processed/
+data_pipeline/labeled/
+latest_runs.json
 *.log
+logs/
+artifacts/
+outputs/
+build/
+dist/
+*.egg-info/
+
+# OS and other IDE metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
 
 # Env, configs
+.env
+**/.env
+data_pipeline/cookies/
 *.yaml
 lib/
 *.conda

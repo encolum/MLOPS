@@ -2,7 +2,10 @@
 # coding: utf-8
 
 import os
+import random
 import shutil
+from pathlib import Path
+import numpy as np
 import pandas as pd
 import torch
 import mlflow
@@ -18,6 +21,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from torch.utils.data import DataLoader, TensorDataset
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from dotenv import load_dotenv
 from transformers import (
     BertTokenizer, BertForSequenceClassification,
     RobertaTokenizer, RobertaForSequenceClassification,
@@ -27,6 +31,22 @@ from transformers import (
 import nltk
 nltk.download('vader_lexicon', quiet=True)
 from sqlalchemy.engine import Engine
+
+MODEL_PIPELINE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = MODEL_PIPELINE_DIR.parent
+MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+LATEST_RUNS_PATH = PROJECT_ROOT / "latest_runs.json"
+load_dotenv(MODEL_PIPELINE_DIR / ".env")
+
+RANDOM_SEED = int(os.getenv("RANDOM_SEED", "42"))
+
+
+def seed_everything(seed=RANDOM_SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 # ===========================
 # Define Utility Classes
 # ===========================
@@ -34,8 +54,8 @@ from sqlalchemy.engine import Engine
 class DataProcessor:
     def __init__(self, sql_query=None):
         self.db_user = os.getenv('DB_USER', 'postgres')
-        self.db_pass = os.getenv('DB_PASSWORD', '123456789')
-        self.db_host = os.getenv('DB_HOST', '172.26.16.1')
+        self.db_pass = os.getenv('DB_PASSWORD')
+        self.db_host = os.getenv('DB_HOST', 'localhost')
         self.db_port = os.getenv('DB_PORT', '5432')
         self.db_name = os.getenv('DB_NAME', 'twitter_analysis')
         self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM tweets')
@@ -52,15 +72,32 @@ class DataProcessor:
         return self.df
 
     def clean_and_map(self, text_col='cleaned_text', label_col='sentiment'):
+        if label_col not in self.df.columns:
+            matching_columns = [
+                column for column in self.df.columns
+                if column.lower() == label_col.lower()
+            ]
+            if not matching_columns:
+                raise ValueError(f"Missing label column: {label_col}")
+            label_col = matching_columns[0]
+
         # 1) Chuẩn hóa text
         self.df[text_col] = self.df[text_col].str.replace(r'[^a-zA-Z0-9\s]', '', regex=True)
 
-        # 2) Chuẩn hóa và map label
-        #   a) strip & capitalize để đồng nhất chuỗi
-        self.df[label_col] = self.df[label_col].str.strip().str.capitalize()
-
-        mapping = {'Positive': 1, 'Negative': 0, 'Neutral': 2}
-        self.df['sentiment_num'] = self.df[label_col].map(mapping)
+        # 2) Accept both human-readable labels and inference labels (0/1/2).
+        normalized_labels = self.df[label_col].astype(str).str.strip().str.lower()
+        mapping = {
+            'negative': 0,
+            '0': 0,
+            '0.0': 0,
+            'positive': 1,
+            '1': 1,
+            '1.0': 1,
+            'neutral': 2,
+            '2': 2,
+            '2.0': 2,
+        }
+        self.df['sentiment_num'] = normalized_labels.map(mapping)
 
         # 3) Kiểm tra kết quả
         print("Label counts (including NaN):")
@@ -79,15 +116,26 @@ class DataProcessor:
     def split(self, test_size=0.2, random_state=42, text_col='cleaned_text', label_col='sentiment_num'):
         X = self.df[text_col]
         y = self.df[label_col]
-        return train_test_split(X, y, test_size=test_size, random_state=random_state)
+        return train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y,
+        )
 
 class TransformerTrainer:
     def __init__(self, model_name, tokenizer_cls, model_cls, num_labels=3, lr=1e-5, batch_size=16, max_length=64):
         self.tokenizer = tokenizer_cls.from_pretrained(model_name)
         self.model = model_cls.from_pretrained(model_name, num_labels=num_labels)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
         self.lr = lr
         self.batch_size = batch_size
         self.max_length = max_length
+        print(f"Training {model_name} on {self.device}")
+        if self.device.type == "cuda":
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     def tokenize(self, texts):
         return self.tokenizer(
@@ -95,9 +143,14 @@ class TransformerTrainer:
             max_length=self.max_length, return_tensors='pt'
         )
 
-    def create_loader(self, tokens, labels):
+    def create_loader(self, tokens, labels, shuffle=False):
         dataset = TensorDataset(tokens['input_ids'], tokens['attention_mask'], labels)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            pin_memory=self.device.type == "cuda",
+        )
 
     def train(self, train_loader, epochs=3):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
@@ -106,7 +159,9 @@ class TransformerTrainer:
             total_loss = 0
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}"):
                 optimizer.zero_grad()
-                input_ids, attention_mask, labels = batch
+                input_ids, attention_mask, labels = (
+                    tensor.to(self.device, non_blocking=True) for tensor in batch
+                )
                 outputs = self.model(input_ids, attention_mask=attention_mask, labels=labels)
                 loss = outputs.loss
                 loss.backward()
@@ -119,7 +174,9 @@ class TransformerTrainer:
         preds, truths = [], []
         with torch.no_grad():
             for batch in tqdm(test_loader, desc="Evaluating"):
-                input_ids, attention_mask, labels = batch
+                input_ids, attention_mask, labels = (
+                    tensor.to(self.device, non_blocking=True) for tensor in batch
+                )
                 outputs = self.model(input_ids, attention_mask=attention_mask)
                 logits = outputs.logits
                 batch_preds = torch.argmax(logits, dim=1).cpu().numpy()
@@ -130,8 +187,12 @@ class TransformerTrainer:
     def run(self, X_train, y_train, X_test, y_test, epochs=3):
         tokens_train = self.tokenize(X_train)
         tokens_test = self.tokenize(X_test)
-        train_loader = self.create_loader(tokens_train, torch.tensor(y_train.tolist()))
-        test_loader = self.create_loader(tokens_test, torch.tensor(y_test.tolist()))
+        train_loader = self.create_loader(
+            tokens_train, torch.tensor(y_train.tolist()), shuffle=True
+        )
+        test_loader = self.create_loader(
+            tokens_test, torch.tensor(y_test.tolist()), shuffle=False
+        )
 
         self.train(train_loader, epochs)
         preds, truths = self.evaluate(test_loader)
@@ -243,17 +304,14 @@ def log_model_to_mlflow(model_name, model_wrapper, X_test, preds, truths, params
         mlflow.log_metric("f1_score", report["weighted avg"]["f1-score"])
 
         # Save run id to MLOPS/latest_runs.json
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        latest_runs_path = os.path.join(base_dir, "latest_runs.json")
-
-        if os.path.exists(latest_runs_path):
-            with open(latest_runs_path, "r") as f:
+        if LATEST_RUNS_PATH.exists():
+            with LATEST_RUNS_PATH.open("r") as f:
                 latest_runs = json.load(f)
         else:
             latest_runs = {}
 
         latest_runs[model_name] = run.info.run_id
-        with open(latest_runs_path, "w") as f:
+        with LATEST_RUNS_PATH.open("w") as f:
             json.dump(latest_runs, f, indent=4)
 
         print(f"{model_name} model logged successfully. Run ID: {run.info.run_id}")
@@ -261,13 +319,14 @@ def log_model_to_mlflow(model_name, model_wrapper, X_test, preds, truths, params
 
 # === Main
 if __name__ == '__main__':
+    seed_everything()
     dp = DataProcessor()
     dp.load_data()
     dp.clean_and_map()
     X_train, X_test, y_train, y_test = dp.split()
 
-    tracking_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../mlruns"))
-    mlflow.set_tracking_uri(f"file://{tracking_path}")
+    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", MLRUNS_DIR.as_uri()))
     mlflow.set_experiment("sentiment-analysis")
 
     # Logistic Regression
@@ -278,23 +337,26 @@ if __name__ == '__main__':
     # BERT
     bert_trainer = TransformerTrainer('bert-base-uncased', BertTokenizer, BertForSequenceClassification)
     bert_preds, bert_truth = bert_trainer.run(X_train, y_train, X_test, y_test)
-    bert_trainer.model.save_pretrained("bert_saved")
-    bert_trainer.tokenizer.save_pretrained("bert_saved")
-    log_model_to_mlflow("BERT_Transformer", HFTransformersWrapper(BertForSequenceClassification, BertTokenizer,"model_path"), X_test, bert_preds, bert_truth, {"model_type": "BERT"}, save_dir="bert_saved")
+    bert_dir = MODEL_PIPELINE_DIR / "bert_saved"
+    bert_trainer.model.save_pretrained(bert_dir)
+    bert_trainer.tokenizer.save_pretrained(bert_dir)
+    log_model_to_mlflow("BERT_Transformer", HFTransformersWrapper(BertForSequenceClassification, BertTokenizer,"model_path"), X_test, bert_preds, bert_truth, {"model_type": "BERT"}, save_dir=str(bert_dir))
 
     # RoBERTa
     roberta_trainer = TransformerTrainer('roberta-base', RobertaTokenizer, RobertaForSequenceClassification)
     roberta_preds, roberta_truth = roberta_trainer.run(X_train, y_train, X_test, y_test)
-    roberta_trainer.model.save_pretrained("roberta_saved")
-    roberta_trainer.tokenizer.save_pretrained("roberta_saved")
-    log_model_to_mlflow("RoBERTa_Transformer", HFTransformersWrapper(RobertaForSequenceClassification, RobertaTokenizer, "model_path"), X_test, roberta_preds, roberta_truth, {"model_type": "RoBERTa"}, save_dir="roberta_saved")
+    roberta_dir = MODEL_PIPELINE_DIR / "roberta_saved"
+    roberta_trainer.model.save_pretrained(roberta_dir)
+    roberta_trainer.tokenizer.save_pretrained(roberta_dir)
+    log_model_to_mlflow("RoBERTa_Transformer", HFTransformersWrapper(RobertaForSequenceClassification, RobertaTokenizer, "model_path"), X_test, roberta_preds, roberta_truth, {"model_type": "RoBERTa"}, save_dir=str(roberta_dir))
 
     # DistilBERT
     distil_trainer = TransformerTrainer('distilbert-base-uncased', DistilBertTokenizer, DistilBertForSequenceClassification)
     distil_preds, distil_truth = distil_trainer.run(X_train, y_train, X_test, y_test)
-    distil_trainer.model.save_pretrained("distilbert_saved")
-    distil_trainer.tokenizer.save_pretrained("distilbert_saved")
-    log_model_to_mlflow("DistilBERT_Transformer", HFTransformersWrapper(DistilBertForSequenceClassification, DistilBertTokenizer, "model_path"), X_test, distil_preds, distil_truth, {"model_type": "DistilBERT"}, save_dir="distilbert_saved")
+    distilbert_dir = MODEL_PIPELINE_DIR / "distilbert_saved"
+    distil_trainer.model.save_pretrained(distilbert_dir)
+    distil_trainer.tokenizer.save_pretrained(distilbert_dir)
+    log_model_to_mlflow("DistilBERT_Transformer", HFTransformersWrapper(DistilBertForSequenceClassification, DistilBertTokenizer, "model_path"), X_test, distil_preds, distil_truth, {"model_type": "DistilBERT"}, save_dir=str(distilbert_dir))
 
     # VADER
     vader_eval = VaderEvaluator()

@@ -2,7 +2,9 @@ import mlflow
 import mlflow.pyfunc
 from mlflow.tracking import MlflowClient
 import os
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
 import uvicorn
@@ -10,11 +12,11 @@ import json
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import pandas as pd
 
-# === Thiết lập tracking URI ===
-# tracking_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../mlruns"))
-# mlflow.set_tracking_uri(f"file://{tracking_path}")
-tracking_path = "/app/mlruns"  # Đường dẫn trong container
-mlflow.set_tracking_uri(f"file://{tracking_path}")
+MODEL_PIPELINE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = MODEL_PIPELINE_DIR.parent
+MLRUNS_DIR = PROJECT_ROOT / "mlruns"
+load_dotenv(MODEL_PIPELINE_DIR / ".env")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", MLRUNS_DIR.as_uri()))
 # mlflow.set_experiment("sentiment-analysis")
 # === Bước 1: Lấy danh sách mô hình theo prefix ===
 def get_registered_models(prefix="sentiment_"):
@@ -128,7 +130,7 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     if model is None:
-        return {"status": "unhealthy", "message": "Model not loaded"}
+        raise HTTPException(status_code=503, detail="Model not loaded")
     return {"status": "healthy"}
 
 # Endpoint dự đoán
@@ -139,10 +141,17 @@ async def predict(request: PredictionRequest):
     
     try:
         # Chuyển đổi input thành định dạng MLflow
-        input_data = [{"text": item.text} for item in request.instances]
+        input_data = pd.DataFrame(
+            {"text": [item.text for item in request.instances]}
+        )
         # Dự đoán
         predictions = model.predict(input_data)
-        return {"predictions": predictions.tolist()}
+        prediction_list = (
+            predictions.tolist()
+            if hasattr(predictions, "tolist")
+            else list(predictions)
+        )
+        return {"predictions": prediction_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
     
