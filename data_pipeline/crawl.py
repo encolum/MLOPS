@@ -41,16 +41,15 @@ anti_trump_keywords = ["Trump", "Donald",
     "DJT","white house","White House",
     "The Donald",
     "Former President Trump",
-    "Trump 2024", "Drumpf",                # Họ gốc của gia đình Trump (John Oliver từng nhấn mạnh)
+    "Trump 2024", "Drumpf",
     "considering","listening to all candidates","not a fan, but not a hater either","hope the winner serves the country",
     "Trumpanzee","win","congratulations","congratulate","congrats","victory","victorious","any candidate as long as","fair debate",
     "Donny","listen further","candidate","not a fan","not a supporter","not a follower","not a believer","not a devotee",
     "Traitor Trump",
     "Impeached President","win","won","lose"," election","not vote","American 2024"
 ]
-NUM_ACCOUNTS = 1
 TARGET_TWEETS = 20
-SEARCH_BATCH_SIZE = 100
+SEARCH_BATCH_SIZE = 20
 NUM_BATCHES_NEEDED = (TARGET_TWEETS + SEARCH_BATCH_SIZE - 1) // SEARCH_BATCH_SIZE
 DELAY_BETWEEN_BATCHES_MIN = 50
 DELAY_BETWEEN_BATCHES_MAX = 80
@@ -66,56 +65,43 @@ def is_valid_text(text):
     return len(words) >= 3
 def extract_hashtags_from_text(text):
     return re.findall(r"#\w+", text)
-async def login_account(account_info):
-    username = account_info['username']
-    email = account_info['email']
-    password = account_info['password']
-    cookie_file = account_info['cookie_file']
-    acc_id = account_info['id']
+async def login_account(username, email, password, cookie_file):
     client = None
-    print(f"\n--- [Tài khoản {acc_id}] Đang đăng nhập ({username})... ---")
+    print(f"\n--- Logging into Twitter ({username})... ---")
     if os.path.exists(cookie_file):
-        print(f"  Tìm thấy file cookie: {cookie_file}. Đang thử load...")
+        print(f"  Found cookie file: {cookie_file}. Trying to load...")
         client = Client('en-US')
         client.load_cookies(cookie_file)
-        print("    Đã load cookie. Đang xác thực session...")
+        print("    Cookie loaded. Validating session...")
         user_info = await client.user()
         if user_info and hasattr(user_info, 'screen_name'):
-            print(f"    Xác thực thành công với user: @{user_info.screen_name}")
+            print(f"    Session validated as user: @{user_info.screen_name}")
             return client
-        print("    Xác thực cookie không thành công.")
+        print("    Cookie authentication failed.")
         client = None
     if client is None:
-        print("  Đang đăng nhập bằng username/password...")
+        if not password:
+            raise RuntimeError(
+                "TWITTER_PASSWORD is required when no valid Twitter cookie exists"
+            )
+        print("  Logging in with username/password...")
         client = Client('en-US')
-        await client.login(auth_info_1=username, auth_info_2=email, password=password)
-        print(f"--- [Tài khoản {acc_id}] Đăng nhập thành công ---")
+        await client.login(
+            auth_info_1=username,
+            auth_info_2=email or None,
+            password=password,
+        )
+        print("--- Twitter login successful ---")
         os.makedirs(os.path.dirname(cookie_file), exist_ok=True)
         client.save_cookies(cookie_file)
-        print(f"    Đã lưu cookie vào {cookie_file}")
+        print(f"    Cookie saved to {cookie_file}")
         return client
-    print(f"!!! [Tài khoản {acc_id}] Không thể hoàn tất đăng nhập.")
+    print("!!! Could not complete Twitter login.")
     return None
-async def main_keyword_scrape(accounts_credentials, active_clients):
-    
-    print("\n--- Step 1: Login to Twitter accounts ---")
-    for i, creds in enumerate(accounts_credentials):
-        print(f"Processing account {i + 1}/{len(accounts_credentials)}...")
-        client = await login_account(creds)
-        accounts_credentials[i]['client'] = client
-        if client:
-            active_clients.append(client)
-        print(f"Account {creds['id']} ready.")
-    
-    print(f"\n>>> Successfully logged in with {len(active_clients)} accounts.")
 
-    if not active_clients:
-        print("!!! No accounts logged in successfully. Stopping program.")
-        return
-
+async def main_keyword_scrape(client):
     all_tweets_data = []
     seen_tweet_ids = set()  # To check for duplicates
-    current_client_index = 0
     total_tweets_collected_so_far = 0
 
     for keyword in SEARCH_KEYWORDS:
@@ -128,15 +114,7 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
                 print("Target tweet count reached. Stopping scan.")
                 break
 
-            client_index_to_use = current_client_index % len(active_clients)
-            client_for_search = active_clients[client_index_to_use]
-            account_id_for_search = -1
-            for acc_info in accounts_credentials:
-                if acc_info['client'] == client_for_search:
-                    account_id_for_search = acc_info['id']
-                    break
-
-            search_results = await client_for_search.search_tweet(keyword, 'Top', count=SEARCH_BATCH_SIZE)
+            search_results = await client.search_tweet(keyword, 'Top', count=SEARCH_BATCH_SIZE)
 
             if search_results:
                 num_found = len(search_results)
@@ -176,7 +154,7 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
                             'retweetedTweet_id': getattr(retweeted_status, 'id', None) if retweeted_status else None,
                             'quotedTweet_id': getattr(quoted_status, 'id', None) if quoted_status else None,
                             'searched_keyword': keyword,
-                            'scraped_by_account': account_id_for_search
+                            'scraped_by_account': 1
                         })
                         total_tweets_collected_so_far += 1
                         tweets_added_this_batch += 1
@@ -189,10 +167,9 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
             else:
                 print("    No tweets found in this batch.")
 
-            current_client_index += 1
             if batch_num < NUM_BATCHES_NEEDED - 1 and total_tweets_collected_so_far < TARGET_TWEETS:
                 delay = random.randint(DELAY_BETWEEN_BATCHES_MIN, DELAY_BETWEEN_BATCHES_MAX)
-                print(f"\n⏳ Delaying {delay} seconds before next batch...")
+                print(f"\nDelaying {delay} seconds before next batch...")
                 await asyncio.sleep(delay)
 
     # --- Save file ---
@@ -204,38 +181,24 @@ async def main_keyword_scrape(accounts_credentials, active_clients):
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(all_tweets_data)
-        print(f"\n✅ Data saved to: {output_filename}")
+        print(f"\nData saved to: {output_filename}")
         
     else:
-        print("\n⚠️ No tweets were saved.")
+        print("\nNo tweets were saved.")
 async def crawl():
-    # Load credentials
-    accounts_credentials = []
-    all_credentials_loaded = True
-    for i in range(1, NUM_ACCOUNTS + 1):
-        username = os.getenv(f'TWITTER_USERNAME_{i}')
-        email = os.getenv(f'TWITTER_EMAIL_{i}')
-        password = os.getenv(f'TWITTER_PASSWORD_{i}')
-        cookie_file_base = username if username else f"account_{i}"
-        cookie_file = COOKIE_DIR / f"twikit_cookies_{cookie_file_base}.json"
-        
-        if not (username and email and password):
-            print(f"!!! ERROR: Missing information for account {i} in .env")
-            all_credentials_loaded = False
-        else:
-            accounts_credentials.append({
-                'id': i,
-                'username': username,
-                'email': email,
-                'password': password,
-                'cookie_file': cookie_file,
-                'client': None
-            })
+    username = os.getenv('TWITTER_USERNAME')
+    email = os.getenv('TWITTER_EMAIL')
+    password = os.getenv('TWITTER_PASSWORD')
 
-    if not all_credentials_loaded:
-        raise RuntimeError("Missing required Twitter credentials")
+    if not username:
+        raise RuntimeError("Missing required variable in data_pipeline/.env: TWITTER_USERNAME")
 
-    await main_keyword_scrape(accounts_credentials, [])
+    cookie_file = COOKIE_DIR / f"twikit_cookies_{username}.json"
+    client = await login_account(username, email, password, cookie_file)
+    if client is None:
+        raise RuntimeError("Twitter login failed")
+
+    await main_keyword_scrape(client)
 if __name__ == "__main__":
     import nest_asyncio
     import asyncio

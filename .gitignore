@@ -6,6 +6,7 @@ airflow/logs/
 # Virtual env
 venv/
 .venv/
+.airflow-venv/
 mlops/bin/
 mlops/lib/
 __pycache__/
@@ -21,12 +22,16 @@ htmlcov/
 
 # Artifacts
 mlruns/
+mlartifacts/
+mlflow.db
 model_pipeline/mlruns/
 model_pipeline/*_saved/
 model_pipeline/predicted/
 data_pipeline/raw/
 data_pipeline/processed/
 data_pipeline/labeled/
+model_pipeline/test_data.csv
+validated_runs.json
 latest_runs.json
 *.log
 logs/
