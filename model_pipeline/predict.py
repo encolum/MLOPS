@@ -48,7 +48,7 @@ def find_latest_processed_file(processed_dir=PROCESSED_DIR):
     pattern = os.path.join(processed_dir, "*.csv")
     files = glob.glob(pattern)
     if not files:
-        raise FileNotFoundError(f"Không tìm thấy file processed nào trong {processed_dir}")
+        raise FileNotFoundError(f"No processed files found in {processed_dir}")
     return max(files, key=os.path.getmtime)
 
 # @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))

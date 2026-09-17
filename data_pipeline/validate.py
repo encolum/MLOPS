@@ -272,4 +272,4 @@ if __name__ == "__main__":
         ]
         raise RuntimeError(f"Data validation failed: {', '.join(failed)}")
 
-    print("✅ All validation checks passed!")
+    print("All validation checks passed!")

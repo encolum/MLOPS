@@ -12,6 +12,7 @@ import requests
 import time
 from pathlib import Path
 import shlex
+import os
 import sys
 # Import necessary Airflow models
 from airflow.models.taskinstance import TaskInstance 
@@ -23,8 +24,22 @@ MODEL_PIPELINE_DIR = PROJECT_ROOT / "model_pipeline"
 COMPOSE_FILE = PROJECT_ROOT / "dockerfiles" / "docker-compose.yml"
 
 
+def project_python():
+    """Use the project environment for project tasks, not Airflow's venv."""
+    configured = os.getenv("MLOPS_PYTHON_BIN")
+    candidates = [
+        Path(configured) if configured else None,
+        PROJECT_ROOT / "venv" / "bin" / "python",
+        PROJECT_ROOT / ".venv" / "bin" / "python",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return candidate
+    return Path(sys.executable)
+
+
 def python_command(script):
-    return f"{shlex.quote(sys.executable)} {shlex.quote(str(script))}"
+    return f"{shlex.quote(str(project_python()))} {shlex.quote(str(script))}"
 
 
 # Default args for all tasks
@@ -80,7 +95,7 @@ def wait_for_mlflow(timeout=90):
     import requests
     from airflow.exceptions import AirflowFailException
 
-    url = "http://localhost:5000/api/2.0/mlflow/experiments/list"
+    url = "http://localhost:5002/api/2.0/mlflow/experiments/list"
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -172,10 +187,27 @@ with DAG(
     #     trigger_rule=TriggerRule.ALL_DONE,
     # )
     model_serve = BashOperator(
-    task_id='model_serve',
-    bash_command=f"docker compose -f {shlex.quote(str(COMPOSE_FILE))} up -d",
-    trigger_rule=TriggerRule.ALL_SUCCESS,
-)
+        task_id='model_serve',
+        bash_command=f"""
+        docker compose -f {shlex.quote(str(COMPOSE_FILE))} up -d --build --force-recreate
+        for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5001/health > /dev/null; then
+                echo "FastAPI loaded the champion model."
+                exit 0
+            fi
+            echo "Waiting for FastAPI model startup ($attempt/30)..."
+            sleep 2
+        done
+        docker compose -f {shlex.quote(str(COMPOSE_FILE))} logs fastapi
+        echo "FastAPI did not become healthy in time."
+        exit 1
+        """,
+        env={
+            'DOCKER_MLFLOW_TRACKING_URI': 'http://host.docker.internal:5002',
+        },
+        append_env=True,
+        trigger_rule=TriggerRule.ALL_SUCCESS,
+    )
 
     # Step 8: Predict using the current model (for both training and non-training days)
     predict_data = BashOperator(

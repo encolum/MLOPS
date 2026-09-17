@@ -1,10 +1,10 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
 RUN pip install --upgrade pip && pip install --no-cache-dir -U pip setuptools wheel
 COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt  # Loại bỏ --no-cache-dir
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY test.py .
 COPY model_serve.py .
 
