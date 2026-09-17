@@ -51,7 +51,7 @@ def should_train_model(execution_date, dag, session=None):
     )
 
     if not last_runs:
-        print("✅ First training run.")
+        print("First training run.")
         return True
 
     last_run_date = last_runs[0].execution_date.date()
@@ -59,9 +59,9 @@ def should_train_model(execution_date, dag, session=None):
     days_since = (today - last_run_date).days
 
     if days_since < 15:
-        print(f"⏩ Only {days_since} days since last training — skipping.")
+        print(f"Only {days_since} days since last training — skipping.")
         raise AirflowSkipException("Not time yet.")
-    print("✅ 15 days passed — running training.")
+    print("15 days passed — running training.")
     return True
 
 dag = DAG(
