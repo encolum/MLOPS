@@ -50,7 +50,6 @@ jobs:
           push: false
           tags: twitter-analysis:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Smoke test real API container
         shell: bash
@@ -130,4 +129,3 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
