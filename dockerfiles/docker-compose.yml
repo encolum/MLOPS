@@ -6,7 +6,11 @@ services:
     ports:
       - "5001:5001"
     environment:
-      MLFLOW_TRACKING_URI: ${DOCKER_MLFLOW_TRACKING_URI:-http://host.docker.internal:5000}
+      MLFLOW_TRACKING_URI: ${DOCKER_MLFLOW_TRACKING_URI:-http://host.docker.internal:5002}
+    volumes:
+      # MLflow stores this model artifact with an absolute host path. Mount it
+      # into the container at the same path so pyfunc can load the model.
+      - ${HOST_MLFLOW_ARTIFACTS_DIR:-../mlartifacts}:${MODEL_ARTIFACTS_DIR:-/Users/encol/MLOPS/mlartifacts}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     container_name: fastapi-server

@@ -27,7 +27,7 @@ def get_registered_models(prefix="sentiment_"):
             if rm.name.startswith(prefix)
         ]
     except mlflow.exceptions.MlflowException as e:
-        print(f"Lỗi khi lấy model registry: {e}")
+        print(f"Failed to fetch model registry: {e}")
         return []
 
 # === Bước 2: Tìm champion và challenger ===
@@ -42,7 +42,10 @@ def find_best_model(registered_models):
         versions = client.search_model_versions(f"name='{model}'")
         for v in versions:
             run = client.get_run(v.run_id)
-            f1 = run.data.metrics.get("f1_score", -1)
+            f1 = run.data.metrics.get(
+                "external_test_weighted_f1",
+                run.data.metrics.get("f1_score", -1),
+            )
             if f1 > best_f1:
                 challenger_f1, challenger_model, challenger_run_id = best_f1, best_model, best_run_id
                 best_f1, best_model, best_run_id = f1, model, v.run_id
@@ -51,7 +54,7 @@ def find_best_model(registered_models):
 
     print(f"Champion: {best_model} (F1={best_f1:.4f})")
     if challenger_model:
-        print(f"⚔️  Challenger: {challenger_model} (F1={challenger_f1:.4f})")
+        print(f"Challenger: {challenger_model} (F1={challenger_f1:.4f})")
     return best_model, best_run_id, best_f1, challenger_model, challenger_run_id, challenger_f1
 
 # === Bước 3: Gắn tag champion/challenger ===
@@ -62,7 +65,7 @@ def update_tags(best_model, best_run_id, _, challenger_model, challenger_run_id,
         versions = client.search_model_versions(f"name='{model}'")
         for v in versions:
             if v.run_id == run_id:
-                client.set_model_version_tag(model, int(v.version), tag, "True")
+                client.set_model_version_tag(model, v.version, tag, "True")
                 print(f" Set {tag} tag for {model} v{v.version}")
                 return
 
@@ -82,7 +85,7 @@ def get_model_uri(best_model):
             )
             print(f"Promoted {best_model} v{v.version} to Production.")
             return f"models:/{best_model}/production"
-    print("Không tìm thấy champion.")
+    print("No champion found.")
     return None
 
 # === Bước 5: Khởi tạo FastAPI và load mô hình ===
@@ -106,7 +109,7 @@ async def startup_event():
     models = get_registered_models()
     print(f"Registered models: {models}")
     if not models:
-        print("Không tìm thấy mô hình nào trong registry.")
+        print("No models found in registry.")
         return
 
     best_model, best_run_id, best_f1, challenger_model, challenger_run_id, challenger_f1 = find_best_model(models)
@@ -121,10 +124,10 @@ async def startup_event():
             model = mlflow.pyfunc.load_model(uri)
             print("Model loaded successfully.")
         except Exception as e:
-            print(f"Không thể load mô hình: {e}")
+            print(f"Failed to load model: {e}")
             model = None
     else:
-        print("Không thể load mô hình vì không tìm thấy URI.")
+        print("Failed to load model: URI not found.")
 
 # Endpoint kiểm tra sức khỏe
 @app.get("/health")

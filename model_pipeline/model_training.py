@@ -23,8 +23,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from dotenv import load_dotenv
 from transformers import (
-    BertTokenizer, BertForSequenceClassification,
-    RobertaTokenizer, RobertaForSequenceClassification,
     DistilBertTokenizer, DistilBertForSequenceClassification
 )
 
@@ -57,7 +55,7 @@ class DataProcessor:
         self.db_pass = os.getenv('DB_PASSWORD')
         self.db_host = os.getenv('DB_HOST', 'localhost')
         self.db_port = os.getenv('DB_PORT', '5432')
-        self.db_name = os.getenv('DB_NAME', 'twitter_analysis')
+        self.db_name = os.getenv('DB_NAME', 'twitter_analysis_tutorial')
         self.sql_query = sql_query or os.getenv('SQL_QUERY', 'SELECT * FROM tweets')
         self.df = None
 
@@ -333,22 +331,6 @@ if __name__ == '__main__':
     classical_trainer = ClassicalTrainer()
     class_preds = classical_trainer.run(X_train, y_train, X_test, y_test)
     log_model_to_mlflow("LogisticRegression_TFIDF", SklearnTextWrapper(classical_trainer.model, classical_trainer.vectorizer), X_test, class_preds, y_test, {"model_type": "LogisticRegression"})
-
-    # BERT
-    bert_trainer = TransformerTrainer('bert-base-uncased', BertTokenizer, BertForSequenceClassification)
-    bert_preds, bert_truth = bert_trainer.run(X_train, y_train, X_test, y_test)
-    bert_dir = MODEL_PIPELINE_DIR / "bert_saved"
-    bert_trainer.model.save_pretrained(bert_dir)
-    bert_trainer.tokenizer.save_pretrained(bert_dir)
-    log_model_to_mlflow("BERT_Transformer", HFTransformersWrapper(BertForSequenceClassification, BertTokenizer,"model_path"), X_test, bert_preds, bert_truth, {"model_type": "BERT"}, save_dir=str(bert_dir))
-
-    # RoBERTa
-    roberta_trainer = TransformerTrainer('roberta-base', RobertaTokenizer, RobertaForSequenceClassification)
-    roberta_preds, roberta_truth = roberta_trainer.run(X_train, y_train, X_test, y_test)
-    roberta_dir = MODEL_PIPELINE_DIR / "roberta_saved"
-    roberta_trainer.model.save_pretrained(roberta_dir)
-    roberta_trainer.tokenizer.save_pretrained(roberta_dir)
-    log_model_to_mlflow("RoBERTa_Transformer", HFTransformersWrapper(RobertaForSequenceClassification, RobertaTokenizer, "model_path"), X_test, roberta_preds, roberta_truth, {"model_type": "RoBERTa"}, save_dir=str(roberta_dir))
 
     # DistilBERT
     distil_trainer = TransformerTrainer('distilbert-base-uncased', DistilBertTokenizer, DistilBertForSequenceClassification)
